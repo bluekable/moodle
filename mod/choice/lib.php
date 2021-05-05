@@ -62,6 +62,8 @@ global $CHOICE_DISPLAY;
 $CHOICE_DISPLAY = array (CHOICE_DISPLAY_HORIZONTAL   => get_string('displayhorizontal', 'choice'),
                          CHOICE_DISPLAY_VERTICAL     => get_string('displayvertical','choice'));
 
+require_once(__DIR__ . '/deprecatedlib.php');
+
 /// Standard functions /////////////////////////////////////////////////////////
 
 /**
@@ -213,7 +215,9 @@ function choice_prepare_options($choice, $user, $coursemodule, $allresponses) {
 
     $cdisplay = array('options'=>array());
 
-    $cdisplay['limitanswers'] = true;
+    $cdisplay['limitanswers'] = $choice->limitanswers;
+    $cdisplay['showavailable'] = $choice->showavailable;
+
     $context = context_module::instance($coursemodule->id);
 
     foreach ($choice->option as $optionid => $text) {
@@ -796,9 +800,11 @@ function choice_get_response_data($choice, $cm, $groupmode, $onlyactive) {
 
 /// First get all the users who have access here
 /// To start with we assume they are all "unanswered" then move them later
-    $extrafields = get_extra_user_fields($context);
+    // TODO Does not support custom user profile fields (MDL-70456).
+    $userfieldsapi = \core_user\fields::for_identity($context, false)->with_userpic();
+    $userfields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $allresponses[0] = get_enrolled_users($context, 'mod/choice:choose', $currentgroup,
-            user_picture::fields('u', $extrafields), null, 0, 0, $onlyactive);
+            $userfields, null, 0, 0, $onlyactive);
 
 /// Get all the recorded responses for this choice
     $rawresponses = $DB->get_records('choice_answers', array('choiceid' => $choice->id));
@@ -820,15 +826,6 @@ function choice_get_response_data($choice, $cm, $groupmode, $onlyactive) {
         }
     }
     return $allresponses;
-}
-
-/**
- * Returns all other caps used in module
- *
- * @return array
- */
-function choice_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
 }
 
 /**
@@ -893,33 +890,6 @@ function choice_extend_settings_navigation(settings_navigation $settings, naviga
 }
 
 /**
- * Obtains the automatic completion state for this choice based on any conditions
- * in forum settings.
- *
- * @param object $course Course
- * @param object $cm Course-module
- * @param int $userid User ID
- * @param bool $type Type of comparison (or/and; can be used as return value if no conditions)
- * @return bool True if completed, false if not, $type if conditions not set.
- */
-function choice_get_completion_state($course, $cm, $userid, $type) {
-    global $CFG,$DB;
-
-    // Get choice details
-    $choice = $DB->get_record('choice', array('id'=>$cm->instance), '*',
-            MUST_EXIST);
-
-    // If completion option is enabled, evaluate it and return true/false
-    if($choice->completionsubmit) {
-        return $DB->record_exists('choice_answers', array(
-                'choiceid'=>$choice->id, 'userid'=>$userid));
-    } else {
-        // Completion option is not enabled so just return $type
-        return $type;
-    }
-}
-
-/**
  * Return a list of page types
  * @param string $pagetype current page type
  * @param stdClass $parentcontext Block's parent context
@@ -931,83 +901,10 @@ function choice_page_type_list($pagetype, $parentcontext, $currentcontext) {
 }
 
 /**
- * Prints choice summaries on MyMoodle Page
- *
- * Prints choice name, due date and attempt information on
- * choice activities that have a deadline that has not already passed
- * and it is available for completing.
- *
- * @deprecated since 3.3
- * @todo The final deprecation of this function will take place in Moodle 3.7 - see MDL-57487.
- * @uses CONTEXT_MODULE
- * @param array $courses An array of course objects to get choice instances from.
- * @param array $htmlarray Store overview output array( course ID => 'choice' => HTML output )
+ * @deprecated since Moodle 3.3, when the block_course_overview block was removed.
  */
-function choice_print_overview($courses, &$htmlarray) {
-    global $USER, $DB, $OUTPUT;
-
-    debugging('The function choice_print_overview() is now deprecated.', DEBUG_DEVELOPER);
-
-    if (empty($courses) || !is_array($courses) || count($courses) == 0) {
-        return;
-    }
-    if (!$choices = get_all_instances_in_courses('choice', $courses)) {
-        return;
-    }
-
-    $now = time();
-    foreach ($choices as $choice) {
-        if ($choice->timeclose != 0                                      // If this choice is scheduled.
-            and $choice->timeclose >= $now                               // And the deadline has not passed.
-            and ($choice->timeopen == 0 or $choice->timeopen <= $now)) { // And the choice is available.
-
-            // Visibility.
-            $class = (!$choice->visible) ? 'dimmed' : '';
-
-            // Link to activity.
-            $url = new moodle_url('/mod/choice/view.php', array('id' => $choice->coursemodule));
-            $url = html_writer::link($url, format_string($choice->name), array('class' => $class));
-            $str = $OUTPUT->box(get_string('choiceactivityname', 'choice', $url), 'name');
-
-             // Deadline.
-            $str .= $OUTPUT->box(get_string('choicecloseson', 'choice', userdate($choice->timeclose)), 'info');
-
-            // Display relevant info based on permissions.
-            if (has_capability('mod/choice:readresponses', context_module::instance($choice->coursemodule))) {
-                $attempts = $DB->count_records_sql('SELECT COUNT(DISTINCT userid) FROM {choice_answers} WHERE choiceid = ?',
-                    [$choice->id]);
-                $url = new moodle_url('/mod/choice/report.php', ['id' => $choice->coursemodule]);
-                $str .= $OUTPUT->box(html_writer::link($url, get_string('viewallresponses', 'choice', $attempts)), 'info');
-
-            } else if (has_capability('mod/choice:choose', context_module::instance($choice->coursemodule))) {
-                // See if the user has submitted anything.
-                $answers = $DB->count_records('choice_answers', array('choiceid' => $choice->id, 'userid' => $USER->id));
-                if ($answers > 0) {
-                    // User has already selected an answer, nothing to show.
-                    $str = '';
-                } else {
-                    // User has not made a selection yet.
-                    $str .= $OUTPUT->box(get_string('notanswered', 'choice'), 'info');
-                }
-            } else {
-                // Does not have permission to do anything on this choice activity.
-                $str = '';
-            }
-
-            // Make sure we have something to display.
-            if (!empty($str)) {
-                // Generate the containing div.
-                $str = $OUTPUT->box($str, 'choice overview');
-
-                if (empty($htmlarray[$choice->course]['choice'])) {
-                    $htmlarray[$choice->course]['choice'] = $str;
-                } else {
-                    $htmlarray[$choice->course]['choice'] .= $str;
-                }
-            }
-        }
-    }
-    return;
+function choice_print_overview() {
+    throw new coding_exception('choice_print_overview() can not be used any more and is obsolete.');
 }
 
 
@@ -1245,6 +1142,14 @@ function mod_choice_core_calendar_provide_event_action(calendar_event $event,
 
     if (!$cm->uservisible) {
         // The module is not visible to the user for any reason.
+        return null;
+    }
+
+    $completion = new \completion_info($cm->get_course());
+
+    $completiondata = $completion->get_data($cm, false, $userid);
+
+    if ($completiondata->completionstate != COMPLETION_INCOMPLETE) {
         return null;
     }
 

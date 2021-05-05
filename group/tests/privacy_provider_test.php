@@ -96,10 +96,9 @@ class core_group_privacy_provider_testcase extends provider_testcase {
         $exportedgroups = $data->groups;
 
         // User1 belongs to group1 and group2.
-        $this->assertEquals(
+        $this->assertEqualsCanonicalizing(
                 [$group1->name, $group2->name],
-                array_column($exportedgroups, 'name'),
-                '', 0.0, 10, true);
+                array_column($exportedgroups, 'name'));
     }
 
     /**
@@ -295,7 +294,7 @@ class core_group_privacy_provider_testcase extends provider_testcase {
         $this->getDataGenerator()->create_group_member(array('userid' => $user1->id, 'groupid' => $group2->id));
         $this->getDataGenerator()->create_group_member(array('userid' => $user2->id, 'groupid' => $group1->id));
 
-        $this->assertEquals([[$group1->id, $group2->id]], groups_get_user_groups($course->id, $user1->id), '', 0.0, 10, true);
+        $this->assertEqualsCanonicalizing([[$group1->id, $group2->id]], groups_get_user_groups($course->id, $user1->id));
         $this->assertEquals([[$group1->id]], groups_get_user_groups($course->id, $user2->id));
 
         $coursecontext = context_course::instance($course->id);
@@ -668,7 +667,7 @@ class core_group_privacy_provider_testcase extends provider_testcase {
         $this->getDataGenerator()->create_group_member(array('userid' => $user->id, 'groupid' => $group1->id));
         $this->getDataGenerator()->create_group_member(array('userid' => $user->id, 'groupid' => $group2->id));
 
-        $this->assertEquals([[$group1->id, $group2->id]], groups_get_user_groups($course->id, $user->id), '', 0.0, 10, true);
+        $this->assertEqualsCanonicalizing([[$group1->id, $group2->id]], groups_get_user_groups($course->id, $user->id));
 
         $this->setUser($user);
         $coursecontext = context_course::instance($course->id);
@@ -714,13 +713,14 @@ class core_group_privacy_provider_testcase extends provider_testcase {
         $coursecontext1 = context_course::instance($course1->id);
         $coursecontext2 = context_course::instance($course2->id);
 
-        // User1 is member of some groups in course1 and course2.
+        // User1 is member of some groups in course1 and course2 + self-conversation.
         $contextlist = provider::get_contexts_for_userid($user1->id);
-        $this->assertCount(2, $contextlist);
-        $this->assertEquals(
-                [$coursecontext1->id, $coursecontext2->id],
-                $contextlist->get_contextids(),
-                '', 0.0, 10, true);
+        $contextids = array_values($contextlist->get_contextids());
+
+        $this->assertCount(3, $contextlist);
+        // One of the user context is the one related to self-conversation. Let's test group contexts.
+        $this->assertContainsEquals($coursecontext1->id, $contextids);
+        $this->assertContainsEquals($coursecontext2->id, $contextids);
     }
 
     /**
@@ -757,7 +757,7 @@ class core_group_privacy_provider_testcase extends provider_testcase {
         // User is member of some groups in course1 and course2,
         // but only the membership in course1 is directly managed by core_group.
         $contextlist = provider::get_contexts_for_userid($user->id);
-        $this->assertEquals([$coursecontext1->id], $contextlist->get_contextids());
+        $this->assertEquals($coursecontext1->id, $contextlist->get_contextids()[0]);
     }
 
     /**
@@ -798,10 +798,9 @@ class core_group_privacy_provider_testcase extends provider_testcase {
         $exportedgroups = $data->groups;
 
         // User1 belongs to group1 and group2.
-        $this->assertEquals(
+        $this->assertEqualsCanonicalizing(
                 [$group1->name, $group2->name],
-                array_column($exportedgroups, 'name'),
-                '', 0.0, 10, true);
+                array_column($exportedgroups, 'name'));
     }
 
     /**
@@ -1079,9 +1078,8 @@ class core_group_privacy_provider_testcase extends provider_testcase {
 
         // Only user1 and user2. User3 is not member of any group in course1.
         $this->assertCount(2, $userlist);
-        $this->assertEquals(
+        $this->assertEqualsCanonicalizing(
                 [$user1->id, $user2->id],
-                $userlist->get_userids(),
-                '', 0.0, 10, true);
+                $userlist->get_userids());
     }
 }

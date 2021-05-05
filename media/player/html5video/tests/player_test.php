@@ -36,7 +36,7 @@ class media_html5video_testcase extends advanced_testcase {
     /**
      * Pre-test setup. Preserves $CFG.
      */
-    public function setUp() {
+    public function setUp(): void {
         parent::setUp();
 
         // Reset $CFG and $SERVER.
@@ -60,13 +60,32 @@ class media_html5video_testcase extends advanced_testcase {
     /**
      * Test method get_supported_extensions()
      */
-    public function test_supported_extensions() {
+    public function test_get_supported_extensions() {
         $nativeextensions = file_get_typegroup('extension', 'html_video');
 
         // Make sure that the list of extensions from the setting is exactly the same as html_video group.
         $player = new media_html5video_plugin();
         $this->assertEmpty(array_diff($player->get_supported_extensions(), $nativeextensions));
         $this->assertEmpty(array_diff($nativeextensions, $player->get_supported_extensions()));
+    }
+
+    /**
+     * Test method list_supported_urls()
+     */
+    public function test_list_supported_urls() {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
+
+        $nativeextensions = file_get_typegroup('extension', 'html_video');
+
+        // Create list of URLs for each extension.
+        $urls = array_map(function($ext){
+            return new moodle_url('http://example.org/video.' . $ext);
+        }, $nativeextensions);
+
+        // Make sure that the list of supported URLs is not filtering permitted extensions.
+        $player = new media_html5video_plugin();
+        $this->assertCount(count($urls), $player->list_supported_urls($urls));
     }
 
     /**
@@ -86,15 +105,15 @@ class media_html5video_testcase extends advanced_testcase {
         $this->assertTrue($manager->can_embed_url($url, $embedoptions));
         $content = $manager->embed_url($url, 'Test & file', 0, 0, $embedoptions);
 
-        $this->assertRegExp('~mediaplugin_html5video~', $content);
-        $this->assertRegExp('~</video>~', $content);
-        $this->assertRegExp('~title="Test &amp; file"~', $content);
-        $this->assertRegExp('~width="' . $CFG->media_default_width . '"~', $content);
-        $this->assertNotRegExp('~height=~', $content); // Allow to set automatic height.
+        $this->assertMatchesRegularExpression('~mediaplugin_html5video~', $content);
+        $this->assertMatchesRegularExpression('~</video>~', $content);
+        $this->assertMatchesRegularExpression('~title="Test &amp; file"~', $content);
+        $this->assertMatchesRegularExpression('~width="' . $CFG->media_default_width . '"~', $content);
+        $this->assertDoesNotMatchRegularExpression('~height=~', $content); // Allow to set automatic height.
 
         // Repeat sending the specific size to the manager.
         $content = $manager->embed_url($url, 'New file', 123, 50, $embedoptions);
-        $this->assertRegExp('~width="123" height="50"~', $content);
+        $this->assertMatchesRegularExpression('~width="123" height="50"~', $content);
     }
 
     /**
@@ -108,11 +127,11 @@ class media_html5video_testcase extends advanced_testcase {
         $text = html_writer::link($url, 'Watch this one');
         $content = format_text($text, FORMAT_HTML);
 
-        $this->assertRegExp('~mediaplugin_html5video~', $content);
-        $this->assertRegExp('~</video>~', $content);
-        $this->assertRegExp('~title="Watch this one"~', $content);
-        $this->assertNotRegExp('~<track\b~i', $content);
-        $this->assertRegExp('~width="' . $CFG->media_default_width . '"~', $content);
+        $this->assertMatchesRegularExpression('~mediaplugin_html5video~', $content);
+        $this->assertMatchesRegularExpression('~</video>~', $content);
+        $this->assertMatchesRegularExpression('~title="Watch this one"~', $content);
+        $this->assertDoesNotMatchRegularExpression('~<track\b~i', $content);
+        $this->assertMatchesRegularExpression('~width="' . $CFG->media_default_width . '"~', $content);
     }
 
     /**
@@ -125,7 +144,7 @@ class media_html5video_testcase extends advanced_testcase {
             '<track src="'.$trackurl.'">Unsupported text</video>';
         $content = format_text($text, FORMAT_HTML);
 
-        $this->assertNotRegExp('~mediaplugin_html5video~', $content);
+        $this->assertDoesNotMatchRegularExpression('~mediaplugin_html5video~', $content);
         $this->assertEquals(clean_text($text, FORMAT_HTML), $content);
     }
 }

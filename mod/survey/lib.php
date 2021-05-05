@@ -55,6 +55,7 @@ define("SURVEY_COLLES_PREFERRED_ACTUAL", "3");
 define("SURVEY_ATTLS",                   "4");
 define("SURVEY_CIQ",                     "5");
 
+require_once(__DIR__ . '/deprecatedlib.php');
 
 // STANDARD FUNCTIONS ////////////////////////////////////////////////////////
 /**
@@ -243,7 +244,8 @@ function survey_print_recent_activity($course, $viewfullnames, $timestart) {
 
     $slist = implode(',', $ids); // there should not be hundreds of glossaries in one course, right?
 
-    $allusernames = user_picture::fields('u');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $allusernames = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $rs = $DB->get_recordset_sql("SELECT sa.userid, sa.survey, MAX(sa.time) AS time,
                                          $allusernames
                                     FROM {survey_answers} sa
@@ -270,7 +272,7 @@ function survey_print_recent_activity($course, $viewfullnames, $timestart) {
         return false;
     }
 
-    echo $OUTPUT->heading(get_string('newsurveyresponses', 'survey').':', 3);
+    echo $OUTPUT->heading(get_string('newsurveyresponses', 'survey') . ':', 6);
     foreach ($surveys as $survey) {
         $url = $CFG->wwwroot.'/mod/survey/view.php?id='.$survey->cmid;
         print_recent_activity_note($survey->time, $survey, $survey->name, $url, false, $viewfullnames);
@@ -315,7 +317,8 @@ function survey_get_responses($surveyid, $groupid, $groupingid) {
         $groupsjoin = "";
     }
 
-    $userfields = user_picture::fields('u');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $userfields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     return $DB->get_records_sql("SELECT $userfields, MAX(a.time) as time
                                    FROM {survey_answers} a
                                    JOIN {user} u ON a.userid = u.id
@@ -375,7 +378,8 @@ function survey_get_user_answers($surveyid, $questionid, $groupid, $sort="sa.ans
         $groupsql  = '';
     }
 
-    $userfields = user_picture::fields('u');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $userfields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     return $DB->get_records_sql("SELECT sa.*, $userfields
                                    FROM {survey_answers} sa,  {user} u $groupfrom
                                   WHERE sa.survey = :surveyid
@@ -771,15 +775,6 @@ function survey_reset_userdata($data) {
 }
 
 /**
- * Returns all other caps used in module
- *
- * @return array
- */
-function survey_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
-}
-
-/**
  * @uses FEATURE_GROUPS
  * @uses FEATURE_GROUPINGS
  * @uses FEATURE_MOD_INTRO
@@ -1036,32 +1031,6 @@ function survey_save_answers($survey, $answersrawdata, $course, $context) {
 }
 
 /**
- * Obtains the automatic completion state for this survey based on the condition
- * in feedback settings.
- *
- * @param object $course Course
- * @param object $cm Course-module
- * @param int $userid User ID
- * @param bool $type Type of comparison (or/and; can be used as return value if no conditions)
- * @return bool True if completed, false if not, $type if conditions not set.
- */
-function survey_get_completion_state($course, $cm, $userid, $type) {
-    global $DB;
-
-    // Get survey details.
-    $survey = $DB->get_record('survey', array('id' => $cm->instance), '*', MUST_EXIST);
-
-    // If completion option is enabled, evaluate it and return true/false.
-    if ($survey->completionsubmit) {
-        $params = array('userid' => $userid, 'survey' => $survey->id);
-        return $DB->record_exists('survey_answers', $params);
-    } else {
-        // Completion option is not enabled so just return $type.
-        return $type;
-    }
-}
-
-/**
  * Check if the module has any update that affects the current user since a given time.
  *
  * @param  cm_info $cm course module data
@@ -1121,20 +1090,28 @@ function survey_check_updates_since(cm_info $cm, $from, $filter = array()) {
  *
  * @param calendar_event $event
  * @param \core_calendar\action_factory $factory
+ * @param int $userid User id to use for all capability checks, etc. Set to 0 for current user (default).
  * @return \core_calendar\local\event\entities\action_interface|null
  */
 function mod_survey_core_calendar_provide_event_action(calendar_event $event,
-                                                      \core_calendar\action_factory $factory) {
-    $cm = get_fast_modinfo($event->courseid)->instances['survey'][$event->instance];
+                                                      \core_calendar\action_factory $factory,
+                                                      int $userid = 0) {
+    global $USER;
+
+    if (empty($userid)) {
+        $userid = $USER->id;
+    }
+
+    $cm = get_fast_modinfo($event->courseid, $userid)->instances['survey'][$event->instance];
     $context = context_module::instance($cm->id);
 
-    if (!has_capability('mod/survey:participate', $context)) {
+    if (!has_capability('mod/survey:participate', $context, $userid)) {
         return null;
     }
 
     $completion = new \completion_info($cm->get_course());
 
-    $completiondata = $completion->get_data($cm, false);
+    $completiondata = $completion->get_data($cm, false, $userid);
 
     if ($completiondata->completionstate != COMPLETION_INCOMPLETE) {
         return null;

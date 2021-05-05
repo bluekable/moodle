@@ -14,35 +14,35 @@ Feature: In a book, chapters and subchapters can be rearranged
     And the following "course enrolments" exist:
       | user | course | role |
       | teacher1 | C1 | editingteacher |
+    And the following "activities" exist:
+      | activity | name      | intro                         | course | idnumber | section |
+      | book     | Test book | A book about rearrangements!  | C1     | book1    | 1       |
     And I log in as "teacher1"
     And I am on "Course 1" course homepage with editing mode on
-    And I add a "Book" to section "1" and I fill the form with:
-      | Name | Test book |
-      | Description | A book about rearrangements! |
     And I follow "Test book"
     And I should see "Add new chapter"
     And I set the following fields to these values:
       | Chapter title | Originally first chapter |
       | Content | #1 chapter content |
     And I press "Save changes"
-    And I click on "a[href*='pagenum=1']" "css_element"
+    And I click on "Add new chapter after \"Originally first chapter\"" "link"
     And I set the following fields to these values:
       | Chapter title | A great second chapter |
       | Content | #2 chapter content |
     And I press "Save changes"
-    And I click on "a[href*='pagenum=2']" "css_element"
+    And I click on "Add new chapter after \"A great second chapter\"" "link"
     And I set the following fields to these values:
       | Chapter title | Second chapter, subchapter 1 |
       | Content | #21 subchapter content |
       | Subchapter | 1 |
     And I press "Save changes"
-    And I click on "a[href*='pagenum=3']" "css_element"
+    And I click on "Add new chapter after \"Second chapter, subchapter 1\"" "link"
     And I set the following fields to these values:
       | Chapter title | Second chapter, subchapter 2 |
       | Content | #22 subchapter content |
       | Subchapter | 1 |
     And I press "Save changes"
-    And I click on "a[href*='pagenum=4']" "css_element"
+    And I click on "Add new chapter after \"Second chapter, subchapter 2\"" "link"
     And I set the following fields to these values:
       | Chapter title | There aren't 2 without 3 |
       | Content | #3 subchapter content |

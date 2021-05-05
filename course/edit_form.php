@@ -77,7 +77,7 @@ class course_edit_form extends moodleform {
         if (empty($course->id)) {
             if (has_capability('moodle/course:create', $categorycontext)) {
                 $displaylist = core_course_category::make_categories_list('moodle/course:create');
-                $mform->addElement('select', 'category', get_string('coursecategory'), $displaylist);
+                $mform->addElement('autocomplete', 'category', get_string('coursecategory'), $displaylist);
                 $mform->addHelpButton('category', 'coursecategory');
                 $mform->setDefault('category', $category->id);
             } else {
@@ -93,7 +93,7 @@ class course_edit_form extends moodleform {
                     $displaylist[$course->category] = core_course_category::get($course->category, MUST_EXIST, true)
                         ->get_formatted_name();
                 }
-                $mform->addElement('select', 'category', get_string('coursecategory'), $displaylist);
+                $mform->addElement('autocomplete', 'category', get_string('coursecategory'), $displaylist);
                 $mform->addHelpButton('category', 'coursecategory');
             } else {
                 //keep current
@@ -120,6 +120,29 @@ class course_edit_form extends moodleform {
                 $mform->setConstant('visible', $courseconfig->visible);
             }
         }
+
+        // Download course content.
+        if ($CFG->downloadcoursecontentallowed) {
+            $downloadchoices = [
+                DOWNLOAD_COURSE_CONTENT_DISABLED => get_string('no'),
+                DOWNLOAD_COURSE_CONTENT_ENABLED => get_string('yes'),
+            ];
+            $sitedefaultstring = $downloadchoices[$courseconfig->downloadcontentsitedefault];
+            $downloadchoices[DOWNLOAD_COURSE_CONTENT_SITE_DEFAULT] = get_string('sitedefaultspecified', '', $sitedefaultstring);
+            $downloadselectdefault = $courseconfig->downloadcontent ?? DOWNLOAD_COURSE_CONTENT_SITE_DEFAULT;
+
+            $mform->addElement('select', 'downloadcontent', get_string('enabledownloadcoursecontent', 'course'), $downloadchoices);
+            $mform->addHelpButton('downloadcontent', 'downloadcoursecontent', 'course');
+            $mform->setDefault('downloadcontent', $downloadselectdefault);
+
+            if ((!empty($course->id) && !has_capability('moodle/course:configuredownloadcontent', $coursecontext)) ||
+                    (empty($course->id) &&
+                    !guess_if_creator_will_have_course_capability('moodle/course:configuredownloadcontent', $categorycontext))) {
+                $mform->hardFreeze('downloadcontent');
+                $mform->setConstant('downloadcontent', $downloadselectdefault);
+            }
+        }
+
         $mform->addElement('date_time_selector', 'startdate', get_string('startdate'));
         $mform->addHelpButton('startdate', 'startdate');
         $date = (new DateTime())->setTimestamp(usergetmidnight(time()));
@@ -128,6 +151,26 @@ class course_edit_form extends moodleform {
 
         $mform->addElement('date_time_selector', 'enddate', get_string('enddate'), array('optional' => true));
         $mform->addHelpButton('enddate', 'enddate');
+
+        if (!empty($CFG->enablecourserelativedates)) {
+            $attributes = [
+                'aria-describedby' => 'relativedatesmode_warning'
+            ];
+            if (!empty($course->id)) {
+                $attributes['disabled'] = true;
+            }
+            $relativeoptions = [
+                0 => get_string('no'),
+                1 => get_string('yes'),
+            ];
+            $relativedatesmodegroup = [];
+            $relativedatesmodegroup[] = $mform->createElement('select', 'relativedatesmode', get_string('relativedatesmode'),
+                $relativeoptions, $attributes);
+            $relativedatesmodegroup[] = $mform->createElement('html', html_writer::span(get_string('relativedatesmode_warning'),
+                '', ['id' => 'relativedatesmode_warning']));
+            $mform->addGroup($relativedatesmodegroup, 'relativedatesmodegroup', get_string('relativedatesmode'), null, false);
+            $mform->addHelpButton('relativedatesmodegroup', 'relativedatesmode');
+        }
 
         $mform->addElement('text','idnumber', get_string('idnumbercourse'),'maxlength="100"  size="10"');
         $mform->addHelpButton('idnumber', 'idnumbercourse');
@@ -235,6 +278,11 @@ class course_edit_form extends moodleform {
         $mform->addHelpButton('showreports', 'showreports');
         $mform->setDefault('showreports', $courseconfig->showreports);
 
+        // Show activity dates.
+        $mform->addElement('selectyesno', 'showactivitydates', get_string('showactivitydates'));
+        $mform->addHelpButton('showactivitydates', 'showactivitydates');
+        $mform->setDefault('showactivitydates', $courseconfig->showactivitydates);
+
         // Files and uploads.
         $mform->addElement('header', 'filehdr', get_string('filesanduploads'));
 
@@ -269,6 +317,12 @@ class course_edit_form extends moodleform {
             $mform->addElement('selectyesno', 'enablecompletion', get_string('enablecompletion', 'completion'));
             $mform->setDefault('enablecompletion', $courseconfig->enablecompletion);
             $mform->addHelpButton('enablecompletion', 'enablecompletion', 'completion');
+
+            $showcompletionconditions = $courseconfig->showcompletionconditions ?? COMPLETION_SHOW_CONDITIONS;
+            $mform->addElement('selectyesno', 'showcompletionconditions', get_string('showcompletionconditions', 'completion'));
+            $mform->addHelpButton('showcompletionconditions', 'showcompletionconditions', 'completion');
+            $mform->setDefault('showcompletionconditions', $showcompletionconditions);
+            $mform->hideIf('showcompletionconditions', 'enablecompletion', 'eq', COMPLETION_DISABLED);
         } else {
             $mform->addElement('hidden', 'enablecompletion');
             $mform->setType('enablecompletion', PARAM_INT);
@@ -320,6 +374,11 @@ class course_edit_form extends moodleform {
                     array('itemtype' => 'course', 'component' => 'core'));
         }
 
+        // Add custom fields to the form.
+        $handler = core_course\customfield\course_handler::create();
+        $handler->set_parent_context($categorycontext); // For course handler only.
+        $handler->instance_form_definition($mform, empty($course->id) ? 0 : $course->id);
+
         // When two elements we need a group.
         $buttonarray = array();
         $classarray = array('class' => 'form-submit');
@@ -334,6 +393,8 @@ class course_edit_form extends moodleform {
         $mform->addElement('hidden', 'id', null);
         $mform->setType('id', PARAM_INT);
 
+        // Prepare custom fields data.
+        $handler->instance_form_before_set_data($course);
         // Finally set the current form data
         $this->set_data($course);
     }
@@ -383,6 +444,10 @@ class course_edit_form extends moodleform {
                 $mform->removeElement('newsitems');
             }
         }
+
+        // Tweak the form with values provided by custom fields in use.
+        $handler  = core_course\customfield\course_handler::create();
+        $handler->instance_form_definition_after_data($mform, empty($courseid) ? 0 : $courseid);
     }
 
     /**
@@ -425,7 +490,10 @@ class course_edit_form extends moodleform {
             $errors = array_merge($errors, $formaterrors);
         }
 
+        // Add the custom fields validation.
+        $handler = core_course\customfield\course_handler::create();
+        $errors  = array_merge($errors, $handler->instance_form_validation($data, $files));
+
         return $errors;
     }
 }
-

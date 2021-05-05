@@ -22,6 +22,8 @@
  * @package core_user
  */
 
+require_once($CFG->dirroot . '/user/lib.php');
+
 /**
  * Cancels the requirement for a user to update their email address.
  *
@@ -150,7 +152,7 @@ function useredit_load_preferences(&$user, $reload=true) {
  * Updates the user preferences for the given user
  *
  * Only preference that can be updated directly will be updated here. This method is called from various WS
- * updating users and should be used when updating user details. Plugins may whitelist preferences that can
+ * updating users and should be used when updating user details. Plugins may list preferences that can
  * be updated by defining 'user_preferences' callback, {@see core_user::fill_preferences_cache()}
  *
  * Some parts of code may use user preference table to store internal data, in these cases it is acceptable
@@ -258,7 +260,8 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
 
     // Add the necessary names.
     foreach (useredit_get_required_name_fields() as $fullname) {
-        $mform->addElement('text', $fullname,  get_string($fullname),  'maxlength="100" size="30"');
+        $purpose = user_edit_map_field_purpose($user->id, $fullname);
+        $mform->addElement('text', $fullname,  get_string($fullname),  'maxlength="100" size="30"' . $purpose);
         if ($stringman->string_exists('missing'.$fullname, 'core')) {
             $strmissingfield = get_string('missing'.$fullname, 'core');
         } else {
@@ -271,7 +274,8 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
     $enabledusernamefields = useredit_get_enabled_name_fields();
     // Add the enabled additional name fields.
     foreach ($enabledusernamefields as $addname) {
-        $mform->addElement('text', $addname,  get_string($addname), 'maxlength="100" size="30"');
+        $purpose = user_edit_map_field_purpose($user->id, $addname);
+        $mform->addElement('text', $addname,  get_string($addname), 'maxlength="100" size="30"' . $purpose);
         $mform->setType($addname, PARAM_NOTAGS);
     }
 
@@ -282,7 +286,8 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
                 . get_string('emailchangecancel', 'auth') . '</a>';
         $mform->addElement('static', 'emailpending', get_string('email'), $notice);
     } else {
-        $mform->addElement('text', 'email', get_string('email'), 'maxlength="100" size="30"');
+        $purpose = user_edit_map_field_purpose($user->id, 'email');
+        $mform->addElement('text', 'email', get_string('email'), 'maxlength="100" size="30"' . $purpose);
         $mform->addRule('email', $strrequired, 'required', null, 'client');
         $mform->setType('email', PARAM_RAW_TRIMMED);
     }
@@ -295,15 +300,20 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
     $mform->setDefault('maildisplay', core_user::get_property_default('maildisplay'));
     $mform->addHelpButton('maildisplay', 'emaildisplay');
 
+    $mform->addElement('text', 'moodlenetprofile', get_string('moodlenetprofile', 'user'));
+    $mform->setType('moodlenetprofile', PARAM_NOTAGS);
+    $mform->addHelpButton('moodlenetprofile', 'moodlenetprofile', 'user');
+
     $mform->addElement('text', 'city', get_string('city'), 'maxlength="120" size="21"');
     $mform->setType('city', PARAM_TEXT);
     if (!empty($CFG->defaultcity)) {
         $mform->setDefault('city', $CFG->defaultcity);
     }
 
+    $purpose = user_edit_map_field_purpose($user->id, 'country');
     $choices = get_string_manager()->get_list_of_countries();
     $choices = array('' => get_string('selectacountry') . '...') + $choices;
-    $mform->addElement('select', 'country', get_string('selectacountry'), $choices);
+    $mform->addElement('select', 'country', get_string('selectacountry'), $choices, $purpose);
     if (!empty($CFG->country)) {
         $mform->setDefault('country', core_user::get_property_default('country'));
     }
@@ -319,7 +329,9 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
     }
 
     if ($user->id < 0) {
-        $mform->addElement('select', 'lang', get_string('preferredlanguage'), get_string_manager()->get_list_of_translations());
+        $purpose = user_edit_map_field_purpose($user->id, 'lang');
+        $translations = get_string_manager()->get_list_of_translations();
+        $mform->addElement('select', 'lang', get_string('preferredlanguage'), $translations, $purpose);
         $lang = empty($user->lang) ? $CFG->lang : $user->lang;
         $mform->setDefault('lang', $lang);
     }
@@ -366,7 +378,8 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
     if (count($disabledusernamefields) > 0) {
         $mform->addElement('header', 'moodle_additional_names', get_string('additionalnames'));
         foreach ($disabledusernamefields as $allname) {
-            $mform->addElement('text', $allname, get_string($allname), 'maxlength="100" size="30"');
+            $purpose = user_edit_map_field_purpose($user->id, $allname);
+            $mform->addElement('text', $allname, get_string($allname), 'maxlength="100" size="30"' . $purpose);
             $mform->setType($allname, PARAM_NOTAGS);
         }
     }
@@ -380,29 +393,6 @@ function useredit_shared_definition(&$mform, $editoroptions, $filemanageroptions
 
     // Moodle optional fields.
     $mform->addElement('header', 'moodle_optional', get_string('optional', 'form'));
-
-    $mform->addElement('text', 'url', get_string('webpage'), 'maxlength="255" size="50"');
-    $mform->setType('url', core_user::get_property_type('url'));
-
-    $mform->addElement('text', 'icq', get_string('icqnumber'), 'maxlength="15" size="25"');
-    $mform->setType('icq', core_user::get_property_type('icq'));
-    $mform->setForceLtr('icq');
-
-    $mform->addElement('text', 'skype', get_string('skypeid'), 'maxlength="50" size="25"');
-    $mform->setType('skype', core_user::get_property_type('skype'));
-    $mform->setForceLtr('skype');
-
-    $mform->addElement('text', 'aim', get_string('aimid'), 'maxlength="50" size="25"');
-    $mform->setType('aim', core_user::get_property_type('aim'));
-    $mform->setForceLtr('aim');
-
-    $mform->addElement('text', 'yahoo', get_string('yahooid'), 'maxlength="50" size="25"');
-    $mform->setType('yahoo', core_user::get_property_type('yahoo'));
-    $mform->setForceLtr('yahoo');
-
-    $mform->addElement('text', 'msn', get_string('msnid'), 'maxlength="50" size="25"');
-    $mform->setType('msn', core_user::get_property_type('msn'));
-    $mform->setForceLtr('msn');
 
     $mform->addElement('text', 'idnumber', get_string('idnumber'), 'maxlength="255" size="25"');
     $mform->setType('idnumber', core_user::get_property_type('idnumber'));
@@ -467,7 +457,7 @@ function useredit_get_enabled_name_fields() {
     global $CFG;
 
     // Get all of the other name fields which are not ranked as necessary.
-    $additionalusernamefields = array_diff(get_all_user_name_fields(), array('firstname', 'lastname'));
+    $additionalusernamefields = array_diff(\core_user\fields::get_name_fields(), array('firstname', 'lastname'));
     // Find out which additional name fields are actually being used from the fullnamedisplay setting.
     $enabledadditionalusernames = array();
     foreach ($additionalusernamefields as $enabledname) {
@@ -494,7 +484,14 @@ function useredit_get_disabled_name_fields($enabledadditionalusernames = null) {
     }
 
     // These are the additional fields that are not currently enabled.
-    $nonusednamefields = array_diff(get_all_user_name_fields(),
+    $nonusednamefields = array_diff(\core_user\fields::get_name_fields(),
             array_merge(array('firstname', 'lastname'), $enabledadditionalusernames));
-    return $nonusednamefields;
+
+    // It may not be significant anywhere, but for compatibility, this used to return an array
+    // with keys and values the same.
+    $result = [];
+    foreach ($nonusednamefields as $field) {
+        $result[$field] = $field;
+    }
+    return $result;
 }

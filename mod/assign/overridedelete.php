@@ -44,6 +44,16 @@ require_login($course, false, $cm);
 // Check the user has the required capabilities to modify an override.
 require_capability('mod/assign:manageoverrides', $context);
 
+if ($override->groupid) {
+    if (!groups_group_visible($override->groupid, $course, $cm)) {
+        print_error('invalidoverrideid', 'assign');
+    }
+} else {
+    if (!groups_user_groups_visible($course, $override->userid, $cm)) {
+        print_error('invalidoverrideid', 'assign');
+    }
+}
+
 $url = new moodle_url('/mod/assign/overridedelete.php', array('id' => $override->id));
 $confirmurl = new moodle_url($url, array('id' => $override->id, 'confirm' => 1));
 $cancelurl = new moodle_url('/mod/assign/overrides.php', array('cmid' => $cm->id));
@@ -80,7 +90,8 @@ if ($override->groupid) {
     $group = $DB->get_record('groups', array('id' => $override->groupid), 'id, name');
     $confirmstr = get_string("overridedeletegroupsure", "assign", $group->name);
 } else {
-    $namefields = get_all_user_name_fields(true);
+    $userfieldsapi = \core_user\fields::for_name();
+    $namefields = $userfieldsapi->get_sql('', false, '', '', false)->selects;
     $user = $DB->get_record('user', array('id' => $override->userid),
             'id, ' . $namefields);
     $confirmstr = get_string("overridedeleteusersure", "assign", fullname($user));

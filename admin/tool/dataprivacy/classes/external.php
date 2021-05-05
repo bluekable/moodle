@@ -212,7 +212,8 @@ class external extends external_api {
                 $warnings[] = [
                     'item' => $dpo->id,
                     'warningcode' => 'errorsendingtodpo',
-                    'message' => get_string('errorsendingmessagetodpo', 'tool_dataprivacy')
+                    'message' => get_string('errorsendingmessagetodpo', 'tool_dataprivacy',
+                        fullname($dpo))
                 ];
             }
         }
@@ -689,6 +690,7 @@ class external extends external_api {
      * @throws restricted_context_exception
      */
     public static function get_users($query) {
+        global $DB;
         $params = external_api::validate_parameters(self::get_users_parameters(), [
             'query' => $query
         ]);
@@ -699,19 +701,36 @@ class external extends external_api {
         self::validate_context($context);
         require_capability('tool/dataprivacy:managedatarequests', $context);
 
-        $allusernames = get_all_user_name_fields(true);
+        $userfieldsapi = \core_user\fields::for_name();
+        $allusernames = $userfieldsapi->get_sql('', false, '', '', false)->selects;
         // Exclude admins and guest user.
         $excludedusers = array_keys(get_admins()) + [guest_user()->id];
         $sort = 'lastname ASC, firstname ASC';
-        $fields = 'id, email, ' . $allusernames;
-        $users = get_users(true, $query, true, $excludedusers, $sort, '', '', 0, 30, $fields);
+        $fields = 'id,' . $allusernames;
+
+        // TODO Does not support custom user profile fields (MDL-70456).
+        $extrafields = \core_user\fields::get_identity_fields($context, false);
+        if (!empty($extrafields)) {
+            $fields .= ',' . implode(',', $extrafields);
+        }
+
+        list($sql, $params) = users_search_sql($query, '', false, $extrafields, $excludedusers);
+        $users = $DB->get_records_select('user', $sql, $params, $sort, $fields, 0, 30);
         $useroptions = [];
         foreach ($users as $user) {
-            $useroptions[$user->id] = (object)[
+            $useroption = (object)[
                 'id' => $user->id,
-                'fullname' => fullname($user),
-                'email' => $user->email
+                'fullname' => fullname($user)
             ];
+            $useroption->extrafields = [];
+            foreach ($extrafields as $extrafield) {
+                // Sanitize the extra fields to prevent potential XSS exploit.
+                $useroption->extrafields[] = (object)[
+                    'name' => $extrafield,
+                    'value' => s($user->$extrafield)
+                ];
+            }
+            $useroptions[$user->id] = $useroption;
         }
 
         return $useroptions;
@@ -729,7 +748,13 @@ class external extends external_api {
             [
                 'id' => new external_value(core_user::get_property_type('id'), 'ID of the user'),
                 'fullname' => new external_value(core_user::get_property_type('firstname'), 'The fullname of the user'),
-                'email' => new external_value(core_user::get_property_type('email'), 'The user\'s email address', VALUE_OPTIONAL),
+                'extrafields' => new external_multiple_structure(
+                    new external_single_structure([
+                            'name' => new external_value(PARAM_TEXT, 'Name of the extrafield.'),
+                            'value' => new external_value(PARAM_TEXT, 'Value of the extrafield.')
+                        ]
+                    ), 'List of extra fields', VALUE_OPTIONAL
+                )
             ]
         ));
     }
@@ -1591,7 +1616,7 @@ class external extends external_api {
      */
     private static function get_tree_node_structure($allowchildbranches = true) {
         $fields = [
-            'text' => new external_value(PARAM_TEXT, 'The node text', VALUE_REQUIRED),
+            'text' => new external_value(PARAM_RAW, 'The node text', VALUE_REQUIRED),
             'expandcontextid' => new external_value(PARAM_INT, 'The contextid this node expands', VALUE_REQUIRED),
             'expandelement' => new external_value(PARAM_ALPHA, 'What element is this node expanded to', VALUE_REQUIRED),
             'contextid' => new external_value(PARAM_INT, 'The node contextid', VALUE_REQUIRED),

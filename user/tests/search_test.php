@@ -41,7 +41,7 @@ class user_search_testcase extends advanced_testcase {
      */
     protected $userareaid = null;
 
-    public function setUp() {
+    public function setUp(): void {
         $this->resetAfterTest(true);
         set_config('enableglobalsearch', true);
 
@@ -228,5 +228,15 @@ class user_search_testcase extends advanced_testcase {
 
         $this->assertEquals('i/user', $result->get_name());
         $this->assertEquals('moodle', $result->get_component());
+    }
+
+    /**
+     * Test assigned search categories.
+     */
+    public function test_get_category_names() {
+        $searcharea = \core_search\manager::get_search_area($this->userareaid);
+
+        $expected = ['core-users'];
+        $this->assertEquals($expected, $searcharea->get_category_names());
     }
 }

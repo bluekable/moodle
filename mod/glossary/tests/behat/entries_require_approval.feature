@@ -4,7 +4,7 @@ Feature: A teacher can choose whether glossary entries require approval
   As a user
   I need to enable entries requiring approval
 
-  Scenario: Approve and undo approve glossary entries
+  Background:
     Given the following "users" exist:
       | username | firstname | lastname | email |
       | teacher1 | Teacher | 1 | teacher1@example.com |
@@ -18,14 +18,17 @@ Feature: A teacher can choose whether glossary entries require approval
       | teacher1 | C1 | editingteacher |
       | student1 | C1 | student |
       | student2 | C1 | student |
-    And I log in as "teacher1"
-    And I am on "Course 1" course homepage with editing mode on
-    Given I add a "Glossary" to section "1" and I fill the form with:
-      | Name | Test glossary name |
-      | Description | Test glossary entries require approval |
-      | Approved by default | No |
-    And I log out
-    And I log in as "student1"
+    And the following "activity" exists:
+      | activity                      | glossary                               |
+      | course                        | C1                                     |
+      | idnumber                      | 0001                                   |
+      | name                          | Test glossary name                     |
+      | intro                         | Test glossary entries require approval |
+      | section                       | 1                                      |
+      | defaultapproval               | 0                                      |
+
+  Scenario: Approve and undo approve glossary entries
+    Given I log in as "student1"
     And I am on "Course 1" course homepage
     And I follow "Test glossary name"
     When I add a glossary entry with the following data:
@@ -66,3 +69,24 @@ Feature: A teacher can choose whether glossary entries require approval
     And I am on "Course 1" course homepage
     And I follow "Test glossary name"
     Then I should see "No entries found in this section"
+
+  @javascript
+  Scenario: View pending approval glossary items
+    Given I log in as "student1"
+    And I am on "Course 1" course homepage
+    And I follow "Test glossary name"
+    When I add a glossary entry with the following data:
+      | Concept | Just a test concept |
+      | Definition | Concept definition |
+      | Keyword(s) | Black |
+      | Tags       | Test  |
+    And I log out
+    And I log in as "teacher1"
+    And I press "Customise this page"
+    And I add the "Navigation" block if not present
+    And I expand "Site pages" node
+    And I click on "Tags" "link" in the "Navigation" "block"
+    And I follow "Test"
+    Then I should see "Glossary entries"
+    And I should see "Just a test concept"
+    And I should see "Entry not approved"

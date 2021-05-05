@@ -61,14 +61,13 @@ function resource_redirect_if_migrated($oldid, $cmid) {
  * @return does not return
  */
 function resource_display_embed($resource, $cm, $course, $file) {
-    global $CFG, $PAGE, $OUTPUT;
+    global $PAGE, $OUTPUT, $USER;
 
     $clicktoopen = resource_get_clicktoopen($file, $resource->revision);
 
     $context = context_module::instance($cm->id);
-    $path = '/'.$context->id.'/mod_resource/content/'.$resource->revision.$file->get_filepath().$file->get_filename();
-    $fullurl = file_encode_url($CFG->wwwroot.'/pluginfile.php', $path, false);
-    $moodleurl = new moodle_url('/pluginfile.php' . $path);
+    $moodleurl = moodle_url::make_pluginfile_url($context->id, 'mod_resource', 'content', $resource->revision,
+            $file->get_filepath(), $file->get_filename());
 
     $mimetype = $file->get_mimetype();
     $title    = $resource->name;
@@ -82,11 +81,11 @@ function resource_display_embed($resource, $cm, $course, $file) {
     );
 
     if (file_mimetype_in_typegroup($mimetype, 'web_image')) {  // It's an image
-        $code = resourcelib_embed_image($fullurl, $title);
+        $code = resourcelib_embed_image($moodleurl->out(), $title);
 
     } else if ($mimetype === 'application/pdf') {
         // PDF document
-        $code = resourcelib_embed_pdf($fullurl, $title, $clicktoopen);
+        $code = resourcelib_embed_pdf($moodleurl->out(), $title, $clicktoopen);
 
     } else if ($mediamanager->can_embed_url($moodleurl, $embedoptions)) {
         // Media (audio/video) file.
@@ -102,6 +101,12 @@ function resource_display_embed($resource, $cm, $course, $file) {
 
     resource_print_header($resource, $cm, $course);
     resource_print_heading($resource, $cm, $course);
+
+    // Display any activity information (eg completion requirements / dates).
+    $cminfo = cm_info::create($cm);
+    $completiondetails = \core_completion\cm_completion_details::get_instance($cminfo, $USER->id);
+    $activitydates = \core\activity_dates::get_dates_for_module($cminfo, $USER->id);
+    echo $OUTPUT->activity_information($cminfo, $completiondetails, $activitydates);
 
     echo $code;
 
@@ -203,10 +208,16 @@ function resource_get_clicktodownload($file, $revision) {
  * @return does not return
  */
 function resource_print_workaround($resource, $cm, $course, $file) {
-    global $CFG, $OUTPUT;
-
+    global $CFG, $OUTPUT, $USER;
     resource_print_header($resource, $cm, $course);
     resource_print_heading($resource, $cm, $course, true);
+
+    // Display any activity information (eg completion requirements / dates).
+    $cminfo = cm_info::create($cm);
+    $completiondetails = \core_completion\cm_completion_details::get_instance($cminfo, $USER->id);
+    $activitydates = \core\activity_dates::get_dates_for_module($cminfo, $USER->id);
+    echo $OUTPUT->activity_information($cminfo, $completiondetails, $activitydates);
+
     resource_print_intro($resource, $cm, $course, true);
 
     $resource->mainfile = $file->get_filename();
@@ -305,6 +316,7 @@ function resource_get_file_details($resource, $cm) {
         if (!empty($options['showtype'])) {
             if ($mainfile) {
                 $filedetails['type'] = get_mimetype_description($mainfile);
+                $filedetails['mimetype'] = $mainfile->get_mimetype();
                 // Only show type if it is not unknown.
                 if ($filedetails['type'] === get_mimetype_description('document/unknown')) {
                     $filedetails['type'] = '';

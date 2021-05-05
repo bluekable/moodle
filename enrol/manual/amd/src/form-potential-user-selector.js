@@ -25,9 +25,6 @@
 
 define(['jquery', 'core/ajax', 'core/templates', 'core/str'], function($, Ajax, Templates, Str) {
 
-    /** @var {Number} Maximum number of users to show. */
-    var MAXUSERS = 100;
-
     return /** @alias module:enrol_manual/form-potential-user-selector */ {
 
         processResults: function(selector, results) {
@@ -49,12 +46,17 @@ define(['jquery', 'core/ajax', 'core/templates', 'core/str'], function($, Ajax, 
         transport: function(selector, query, success, failure) {
             var promise;
             var courseid = $(selector).attr('courseid');
+            var userfields = $(selector).attr('userfields').split(',');
             if (typeof courseid === "undefined") {
                 courseid = '1';
             }
             var enrolid = $(selector).attr('enrolid');
             if (typeof enrolid === "undefined") {
                 enrolid = '';
+            }
+            var perpage = parseInt($(selector).attr('perpage'));
+            if (isNaN(perpage)) {
+                perpage = 100;
             }
 
             promise = Ajax.call([{
@@ -65,7 +67,7 @@ define(['jquery', 'core/ajax', 'core/templates', 'core/str'], function($, Ajax, 
                     search: query,
                     searchanywhere: true,
                     page: 0,
-                    perpage: MAXUSERS + 1
+                    perpage: perpage + 1
                 }
             }]);
 
@@ -73,15 +75,29 @@ define(['jquery', 'core/ajax', 'core/templates', 'core/str'], function($, Ajax, 
                 var promises = [],
                     i = 0;
 
-                if (results.length <= MAXUSERS) {
+                if (results.length <= perpage) {
                     // Render the label.
+                    const profileRegex = /^profile_field_(.*)$/;
                     $.each(results, function(index, user) {
                         var ctx = user,
                             identity = [];
-                        $.each(['idnumber', 'email', 'phone1', 'phone2', 'department', 'institution'], function(i, k) {
-                            if (typeof user[k] !== 'undefined' && user[k] !== '') {
-                                ctx.hasidentity = true;
-                                identity.push(user[k]);
+                        $.each(userfields, function(i, k) {
+                            const result = profileRegex.exec(k);
+                            if (result) {
+                                if (user.customfields) {
+                                    user.customfields.forEach(function(customfield) {
+                                        if (customfield.shortname === result[1]) {
+                                            ctx.hasidentity = true;
+                                            identity.push(customfield.value);
+                                        }
+
+                                    });
+                                }
+                            } else {
+                                if (typeof user[k] !== 'undefined' && user[k] !== '') {
+                                    ctx.hasidentity = true;
+                                    identity.push(user[k]);
+                                }
                             }
                         });
                         ctx.identity = identity.join(', ');
@@ -100,7 +116,7 @@ define(['jquery', 'core/ajax', 'core/templates', 'core/str'], function($, Ajax, 
                     });
 
                 } else {
-                    return Str.get_string('toomanyuserstoshow', 'core', '>' + MAXUSERS).then(function(toomanyuserstoshow) {
+                    return Str.get_string('toomanyuserstoshow', 'core', '>' + perpage).then(function(toomanyuserstoshow) {
                         success(toomanyuserstoshow);
                         return;
                     });

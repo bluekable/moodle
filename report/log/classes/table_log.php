@@ -59,7 +59,7 @@ class report_log_table_log extends table_sql {
     public function __construct($uniqueid, $filterparams = null) {
         parent::__construct($uniqueid);
 
-        $this->set_attribute('class', 'reportlog generaltable generalbox');
+        $this->set_attribute('class', 'reportlog generaltable generalbox table-sm');
         $this->filterparams = $filterparams;
         // Add course column if logs are displayed for site.
         $cols = array();
@@ -125,7 +125,9 @@ class report_log_table_log extends table_sql {
 
         // If we reach that point new users logs have been generated since the last users db query.
         list($usql, $uparams) = $DB->get_in_or_equal($userid);
-        $sql = "SELECT id," . get_all_user_name_fields(true) . " FROM {user} WHERE id " . $usql;
+        $userfieldsapi = \core_user\fields::for_name();
+        $sql = "SELECT id," . $userfieldsapi->get_sql('', false, '', '', false)->selects .
+                " FROM {user} WHERE id " . $usql;
         if (!$user = $DB->get_records_sql($sql, $uparams)) {
             return false;
         }
@@ -504,7 +506,14 @@ class report_log_table_log extends table_sql {
 
         if (!($this->filterparams->logreader instanceof logstore_legacy\log\store)) {
             // Filter out anonymous actions, this is N/A for legacy log because it never stores them.
-            $joins[] = "anonymous = 0";
+            if ($this->filterparams->modid) {
+                $context = context_module::instance($this->filterparams->modid);
+            } else {
+                $context = context_course::instance($this->filterparams->courseid);
+            }
+            if (!has_capability('moodle/site:viewanonymousevents', $context)) {
+                $joins[] = "anonymous = 0";
+            }
         }
 
         $selector = implode(' AND ', $joins);
@@ -582,7 +591,9 @@ class report_log_table_log extends table_sql {
         // Get user fullname and put that in return list.
         if (!empty($userids)) {
             list($usql, $uparams) = $DB->get_in_or_equal($userids);
-            $users = $DB->get_records_sql("SELECT id," . get_all_user_name_fields(true) . " FROM {user} WHERE id " . $usql,
+            $userfieldsapi = \core_user\fields::for_name();
+            $users = $DB->get_records_sql("SELECT id," . $userfieldsapi->get_sql('', false, '', '', false)->selects .
+                    " FROM {user} WHERE id " . $usql,
                     $uparams);
             foreach ($users as $userid => $user) {
                 $this->userfullnames[$userid] = fullname($user);

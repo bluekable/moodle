@@ -44,7 +44,7 @@ class core_message_migrate_message_data_task_testcase extends advanced_testcase 
      *
      * This is executed before running any test in this file.
      */
-    public function setUp() {
+    public function setUp(): void {
         $this->resetAfterTest();
     }
 
@@ -322,6 +322,37 @@ class core_message_migrate_message_data_task_testcase extends advanced_testcase 
 
         $notification = reset($notifications);
         $this->assertEquals(FORMAT_MOODLE, $notification->fullmessageformat);
+    }
+
+    /**
+     * Test migrating a legacy message that a user sent to themselves then deleted.
+     */
+    public function test_migrating_message_deleted_message_sent_to_self() {
+        global $DB;
+
+        // Create user to test with.
+        $user1 = $this->getDataGenerator()->create_user();
+
+        $m1 = $this->create_legacy_message_or_notification($user1->id, $user1->id, null, false, null, null);
+
+        // Let's delete the message for the 'user to' and 'user from' which in this case is the same user.
+        $messageupdate = new stdClass();
+        $messageupdate->id = $m1;
+        $messageupdate->timeuserfromdeleted = time();
+        $messageupdate->timeusertodeleted = time();
+        $DB->update_record('message', $messageupdate);
+
+        // Now, let's execute the task for the user.
+        $task = new \core_message\task\migrate_message_data();
+        $task->set_custom_data(
+            [
+                'userid' => $user1->id
+            ]
+        );
+        $task->execute();
+
+        $this->assertEquals(0, $DB->count_records('message'));
+        $this->assertEquals(1, $DB->count_records('message_user_actions'));
     }
 
     /**

@@ -65,12 +65,17 @@ define('MESSAGE_DEFAULT_TIMEOUT_POLL_IN_SECONDS', 5 * MINSECS);
 /**
  * Returns the count of unread messages for user. Either from a specific user or from all users.
  *
+ * @deprecated since 3.10
+ * TODO: MDL-69643
  * @param object $user1 the first user. Defaults to $USER
  * @param object $user2 the second user. If null this function will count all of user 1's unread messages.
  * @return int the count of $user1's unread messages
  */
 function message_count_unread_messages($user1=null, $user2=null) {
     global $USER, $DB;
+
+    debugging('message_count_unread_messages is deprecated and no longer used',
+        DEBUG_DEVELOPER);
 
     if (empty($user1)) {
         $user1 = $USER;
@@ -114,6 +119,7 @@ function message_format_message_text($message, $forcetexttohtml = false) {
     $options = new stdClass();
     $options->para = false;
     $options->blanktarget = true;
+    $options->trusted = isset($message->fullmessagetrust) ? $message->fullmessagetrust : false;
 
     $format = $message->fullmessageformat;
 
@@ -177,7 +183,8 @@ function message_search_users($courseids, $searchtext, $sort='', $exceptions='')
     }
 
     $fullname = $DB->sql_fullname();
-    $ufields = user_picture::fields('u');
+    $userfieldsapi = \core_user\fields::for_userpic();
+    $ufields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
 
     if (!empty($sort)) {
         $order = ' ORDER BY '. $sort;
@@ -324,7 +331,7 @@ function message_format_contexturl($message) {
  * @return int|false the ID of the new message or false
  */
 function message_post_message($userfrom, $userto, $message, $format) {
-    global $SITE, $CFG, $USER;
+    global $PAGE;
 
     $eventdata = new \core\message\message();
     $eventdata->courseid         = 1;
@@ -348,21 +355,21 @@ function message_post_message($userfrom, $userto, $message, $format) {
 
     $eventdata->fullmessageformat = $format;
     $eventdata->smallmessage     = $message;//store the message unfiltered. Clean up on output.
-
-    $s = new stdClass();
-    $s->sitename = format_string($SITE->shortname, true, array('context' => context_course::instance(SITEID)));
-    $s->url = $CFG->wwwroot.'/message/index.php?user='.$userto->id.'&id='.$userfrom->id;
-
-    $emailtagline = get_string_manager()->get_string('emailtagline', 'message', $s, $userto->lang);
-    if (!empty($eventdata->fullmessage)) {
-        $eventdata->fullmessage .= "\n\n---------------------------------------------------------------------\n".$emailtagline;
-    }
-    if (!empty($eventdata->fullmessagehtml)) {
-        $eventdata->fullmessagehtml .= "<br /><br />---------------------------------------------------------------------<br />".$emailtagline;
-    }
-
     $eventdata->timecreated     = time();
     $eventdata->notification    = 0;
+    // User image.
+    $userpicture = new user_picture($userfrom);
+    $userpicture->size = 1; // Use f1 size.
+    $userpicture->includetoken = $userto->id; // Generate an out-of-session token for the user receiving the message.
+    $eventdata->customdata = [
+        'notificationiconurl' => $userpicture->get_url($PAGE)->out(false),
+        'actionbuttons' => [
+            'send' => get_string_manager()->get_string('send', 'message', null, $eventdata->userto->lang),
+        ],
+        'placeholders' => [
+            'send' => get_string_manager()->get_string('writeamessage', 'message', null, $eventdata->userto->lang),
+        ],
+    ];
     return message_send($eventdata);
 }
 
@@ -487,15 +494,15 @@ function get_message_output_default_preferences() {
 function translate_message_default_setting($plugindefault, $processorname) {
     // Preset translation arrays
     $permittedvalues = array(
-        0x04 => 'disallowed',
-        0x08 => 'permitted',
-        0x0c => 'forced',
+        MESSAGE_DISALLOWED => 'disallowed',
+        MESSAGE_PERMITTED  => 'permitted',
+        MESSAGE_FORCED     => 'forced',
     );
 
     $loggedinstatusvalues = array(
         0x00 => null, // use null if loggedin/loggedoff is not defined
-        0x01 => 'loggedin',
-        0x02 => 'loggedoff',
+        MESSAGE_DEFAULT_LOGGEDIN  => 'loggedin',
+        MESSAGE_DEFAULT_LOGGEDOFF => 'loggedoff',
     );
 
     // define the default setting
@@ -543,11 +550,12 @@ function message_get_messages($useridto, $useridfrom = 0, $notifications = -1, $
     global $DB;
 
     // If the 'useridto' value is empty then we are going to retrieve messages sent by the useridfrom to any user.
+    $userfieldsapi = \core_user\fields::for_name();
     if (empty($useridto)) {
-        $userfields = get_all_user_name_fields(true, 'u', '', 'userto');
+        $userfields = $userfieldsapi->get_sql('u', false, 'userto', '', false)->selects;
         $messageuseridtosql = 'u.id as useridto';
     } else {
-        $userfields = get_all_user_name_fields(true, 'u', '', 'userfrom');
+        $userfields = $userfieldsapi->get_sql('u', false, 'userfrom', '', false)->selects;
         $messageuseridtosql = "$useridto as useridto";
     }
 
@@ -723,7 +731,7 @@ function core_message_can_edit_message_profile($user) {
 }
 
 /**
- * Implements callback user_preferences, whitelists preferences that users are allowed to update directly
+ * Implements callback user_preferences, lists preferences that users are allowed to update directly
  *
  * Used in {@see core_user::fill_preferences_cache()}, see also {@see useredit_update_user_preference()}
  *
@@ -784,99 +792,10 @@ function core_message_user_preferences() {
 }
 
 /**
- * Renders the popup.
- *
- * @param renderer_base $renderer
- * @return string The HTML
- */
-function core_message_render_navbar_output(\renderer_base $renderer) {
-    global $USER, $CFG;
-
-    // Early bail out conditions.
-    if (!isloggedin() || isguestuser() || user_not_fully_set_up($USER) ||
-        get_user_preferences('auth_forcepasswordchange') ||
-        (!$USER->policyagreed && !is_siteadmin() &&
-            ($manager = new \core_privacy\local\sitepolicy\manager()) && $manager->is_defined())) {
-        return '';
-    }
-
-    $output = '';
-
-    // Add the messages popover.
-    if (!empty($CFG->messaging)) {
-        $unreadcount = \core_message\api::count_unread_conversations($USER);
-        $requestcount = \core_message\api::get_received_contact_requests_count($USER->id);
-        $context = [
-            'userid' => $USER->id,
-            'unreadcount' => $unreadcount + $requestcount
-        ];
-        $output .= $renderer->render_from_template('core_message/message_popover', $context);
-    }
-
-    return $output;
-}
-
-/**
- * Render the message drawer to be included in the top of the body of
- * each page.
+ * Render the message drawer to be included in the top of the body of each page.
  *
  * @return string HTML
  */
 function core_message_standard_after_main_region_html() {
-    global $USER, $CFG, $PAGE;
-
-    // Early bail out conditions.
-    if (empty($CFG->messaging) || !isloggedin() || isguestuser() || user_not_fully_set_up($USER) ||
-        get_user_preferences('auth_forcepasswordchange') ||
-        (!$USER->policyagreed && !is_siteadmin() &&
-            ($manager = new \core_privacy\local\sitepolicy\manager()) && $manager->is_defined())) {
-        return '';
-    }
-
-    $renderer = $PAGE->get_renderer('core');
-    $requestcount = \core_message\api::get_received_contact_requests_count($USER->id);
-    $contactscount = \core_message\api::count_contacts($USER->id);
-
-    $choices = [];
-    $choices[] = [
-        'value' => \core_message\api::MESSAGE_PRIVACY_ONLYCONTACTS,
-        'text' => get_string('contactableprivacy_onlycontacts', 'message')
-    ];
-    $choices[] = [
-        'value' => \core_message\api::MESSAGE_PRIVACY_COURSEMEMBER,
-        'text' => get_string('contactableprivacy_coursemember', 'message')
-    ];
-    if (!empty($CFG->messagingallusers)) {
-        // Add the MESSAGE_PRIVACY_SITE option when site-wide messaging between users is enabled.
-        $choices[] = [
-            'value' => \core_message\api::MESSAGE_PRIVACY_SITE,
-            'text' => get_string('contactableprivacy_site', 'message')
-        ];
-    }
-
-    // Enter to send.
-    $entertosend = get_user_preferences('message_entertosend', false, $USER);
-
-    // Get the unread counts for the current user.
-    $unreadcounts = \core_message\api::get_unread_conversation_counts($USER->id);
-
-    return $renderer->render_from_template('core_message/message_drawer', [
-        'contactrequestcount' => $requestcount,
-        'loggedinuser' => [
-            'id' => $USER->id,
-            'midnight' => usergetmidnight(time())
-        ],
-        'contacts' => [
-            'sectioncontacts' => [
-                'placeholders' => array_fill(0, $contactscount > 50 ? 50 : $contactscount, true)
-            ],
-            'sectionrequests' => [
-                'placeholders' => array_fill(0, $requestcount > 50 ? 50 : $requestcount, true)
-            ],
-        ],
-        'settings' => [
-            'privacy' => $choices,
-            'entertosend' => $entertosend
-        ]
-    ]);
+    return \core_message\helper::render_messaging_widget(true, null, null);
 }

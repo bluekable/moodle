@@ -986,7 +986,7 @@ function print_grade_page_head($courseid, $active_type, $active_plugin=null,
 
     // Put a warning on all gradebook pages if the course has modules currently scheduled for background deletion.
     require_once($CFG->dirroot . '/course/lib.php');
-    if (course_modules_pending_deletion($courseid)) {
+    if (course_modules_pending_deletion($courseid, true)) {
         \core\notification::add(get_string('gradesmoduledeletionpendingwarning', 'grades'),
             \core\output\notification::NOTIFY_WARNING);
     }
@@ -1791,8 +1791,9 @@ class grade_structure {
             return '';
         }
 
-        return $OUTPUT->action_icon($url, new pix_icon('t/preview',
-            get_string('gradeanalysis', 'core_grades')));
+        $title = get_string('gradeanalysis', 'core_grades');
+        return $OUTPUT->action_icon($url, new pix_icon('t/preview', ''), null,
+                ['title' => $title, 'aria-label' => $title]);
     }
 
     /**
@@ -3329,14 +3330,10 @@ abstract class grade_helper {
         // Sets the list of custom profile fields
         $customprofilefields = array_map('trim', explode(',', $CFG->grade_export_customprofilefields));
         if ($includecustomfields && !empty($customprofilefields)) {
-            list($wherefields, $whereparams) = $DB->get_in_or_equal($customprofilefields);
-            $customfields = $DB->get_records_sql("SELECT f.*
-                                                    FROM {user_info_field} f
-                                                    JOIN {user_info_category} c ON f.categoryid=c.id
-                                                    WHERE f.shortname $wherefields
-                                                    ORDER BY c.sortorder ASC, f.sortorder ASC", $whereparams);
+            $customfields = profile_get_user_fields_with_data(0);
 
-            foreach ($customfields as $field) {
+            foreach ($customfields as $fieldobj) {
+                $field = (object)$fieldobj->get_field_config_for_external();
                 // Make sure we can display this custom field
                 if (!in_array($field->shortname, $customprofilefields)) {
                     continue;

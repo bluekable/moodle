@@ -42,46 +42,6 @@ use Behat\Mink\Exception\ElementNotFoundException as ElementNotFoundException,
 class behat_deprecated extends behat_base {
 
     /**
-     * Navigates to the course gradebook and selects a specified item from the grade navigation tabs.
-     * @Given /^I go to "(?P<gradepath_string>(?:[^"]|\\")*)" in the course gradebook$/
-     * @param string $gradepath
-     * @deprecated since Moodle 3.3 MDL-57282 - please do not use this step any more.
-     */
-    public function i_go_to_in_the_course_gradebook($gradepath) {
-        $alternative = 'I navigate to "' . $this->escape($gradepath) . '"  in the course gradebook';
-        $this->deprecated_message($alternative);
-
-        $this->execute('behat_grade::i_navigate_to_in_the_course_gradebook', $gradepath);
-    }
-
-    /**
-     * Click link in navigation tree that matches the text in parentnode/s (seperated using greater-than character if more than one)
-     *
-     * @Given /^I navigate to "(?P<nodetext_string>(?:[^"]|\\")*)" node in "(?P<parentnodes_string>(?:[^"]|\\")*)"$/
-     *
-     * @throws ExpectationException
-     * @param string $nodetext navigation node to click.
-     * @param string $parentnodes comma seperated list of parent nodes.
-     * @return void
-     * @deprecated since Moodle 3.6 MDL-57281 - please do not use this definition step any more.
-     * @todo MDL-63004 This will be deleted in Moodle 4.0.
-     */
-    public function i_navigate_to_node_in($nodetext, $parentnodes) {
-        $alternative[] = 'I navigate to "PATH" in current page administration';
-        $alternative[] = 'I navigate to "PATH" in site administration';
-        $alternative[] = 'I navigate to "TAB1 > TAB2" in the course gradebook';
-        $alternative[] = 'I navigate to course participants';
-        $alternative[] = 'If some items are not available without Navigation block at all, one can use combination of:
-                              I add the "Navigation" block if not present
-                              I click on "LINK" "link" in the "Navigation" "block"';
-
-        $this->deprecated_message($alternative);
-
-        $parentnodes = array_map('trim', explode('>', $parentnodes));
-        $this->execute('behat_navigation::select_node_in_navigation', array($nodetext, $parentnodes));
-    }
-
-    /**
      * Throws an exception if $CFG->behat_usedeprecated is not allowed.
      *
      * @throws Exception

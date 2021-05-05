@@ -64,14 +64,16 @@
                         aria-selected="false"
                     >
                         {{#str}} requests {{/str}}
-                        <span class="badge bg-primary ml-2 {{^contactrequestcount}}hidden{{/contactrequestcount}}" data-region="contact-request-count">
+                        <span class="badge badge-primary bg-primary ml-2 {{^contactrequestcount}}hidden{{/contactrequestcount}}"
+                        data-region="contact-request-count"
+                        aria-label="{{#str}} pendingcontactrequests, core_message, {{contactrequestcount}} {{/str}}">
                             {{contactrequestcount}}
                         </span>
                     </a>
                 </li>
             </ul>
         </div>
-        <div class="tab-content d-flex flex-column">
+        <div class="tab-content d-flex flex-column h-100">
             {{< core_message/message_drawer_view_contacts_body_section_contacts }}
                 {{$rootclasses}}tab-pane fade show active h-100{{/rootclasses}}
                 {{$rootattributes}}

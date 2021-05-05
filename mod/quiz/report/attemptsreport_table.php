@@ -75,6 +75,9 @@ abstract class quiz_attempts_report_table extends table_sql {
     /** @var bool whether to include the column with checkboxes to select each attempt. */
     protected $includecheckboxes;
 
+    /** @var string The toggle group name for the checkboxes in the checkbox column. */
+    protected $togglegroup = 'quiz-attempts';
+
     /**
      * Constructor
      * @param string $uniqueid
@@ -108,8 +111,17 @@ abstract class quiz_attempts_report_table extends table_sql {
      * @return string HTML content to go inside the td.
      */
     public function col_checkbox($attempt) {
+        global $OUTPUT;
+
         if ($attempt->attempt) {
-            return '<input type="checkbox" name="attemptid[]" value="'.$attempt->attempt.'" />';
+            $checkbox = new \core\output\checkbox_toggleall($this->togglegroup, false, [
+                'id' => "attemptid_{$attempt->attempt}",
+                'name' => 'attemptid[]',
+                'value' => $attempt->attempt,
+                'label' => get_string('selectattempt', 'quiz'),
+                'labelclasses' => 'accesshide',
+            ]);
+            return $OUTPUT->render($checkbox);
         } else {
             return '';
         }
@@ -123,7 +135,7 @@ abstract class quiz_attempts_report_table extends table_sql {
     public function col_picture($attempt) {
         global $OUTPUT;
         $user = new stdClass();
-        $additionalfields = explode(',', user_picture::fields());
+        $additionalfields = explode(',', implode(',', \core_user\fields::get_picture_fields()));
         $user = username_load_fields_from_object($user, $attempt, null, $additionalfields);
         $user->id = $attempt->userid;
         return $OUTPUT->user_picture($user);
@@ -234,7 +246,7 @@ abstract class quiz_attempts_report_table extends table_sql {
      * @param int $slot the number used to identify this question within this usage.
      */
     public function make_review_link($data, $attempt, $slot) {
-        global $OUTPUT;
+        global $OUTPUT, $CFG;
 
         $flag = '';
         if ($this->is_flagged($attempt->usageid, $slot)) {
@@ -261,6 +273,16 @@ abstract class quiz_attempts_report_table extends table_sql {
                         array('height' => 450, 'width' => 650)),
                 array('title' => get_string('reviewresponse', 'quiz')));
 
+        if (!empty($CFG->enableplagiarism)) {
+            require_once($CFG->libdir . '/plagiarismlib.php');
+            $output .= plagiarism_get_links([
+                'context' => $this->context->id,
+                'component' => 'qtype_'.$this->questions[$slot]->qtype,
+                'cmid' => $this->context->instanceid,
+                'area' => $attempt->usageid,
+                'itemid' => $slot,
+                'userid' => $attempt->userid]);
+        }
         return $output;
     }
 
@@ -373,8 +395,13 @@ abstract class quiz_attempts_report_table extends table_sql {
 
     /**
      * Get any fields that might be needed when sorting on date for a particular slot.
+     *
+     * Note: these values are only used for sorting. The values displayed are taken
+     * from $this->lateststeps loaded in load_extra_data().
+     *
      * @param int $slot the slot for the column we want.
      * @param string $alias the table alias for latest state information relating to that slot.
+     * @return string definitions of extra fields to add to the SELECT list of the query.
      */
     protected function get_required_latest_state_fields($slot, $alias) {
         return '';
@@ -396,15 +423,15 @@ abstract class quiz_attempts_report_table extends table_sql {
             $fields .= "\n(CASE WHEN $this->qmsubselect THEN 1 ELSE 0 END) AS gradedattempt,";
         }
 
-        $extrafields = get_extra_user_fields_sql($this->context, 'u', '',
-                array('id', 'idnumber', 'firstname', 'lastname', 'picture',
-                'imagealt', 'institution', 'department', 'email'));
-        $allnames = get_all_user_name_fields(true, 'u');
+        // TODO Does not support custom user profile fields (MDL-70456).
+        $userfields = \core_user\fields::for_identity($this->context, false)->with_name()
+                ->excluding('id', 'idnumber', 'picture', 'imagealt', 'institution', 'department', 'email');
+        $extrafields = $userfields->get_sql('u')->selects;
         $fields .= '
                 quiza.uniqueid AS usageid,
                 quiza.id AS attempt,
                 u.id AS userid,
-                u.idnumber, ' . $allnames . ',
+                u.idnumber,
                 u.picture,
                 u.imagealt,
                 u.institution,
@@ -609,22 +636,6 @@ abstract class quiz_attempts_report_table extends table_sql {
         }
 
         echo '<div id="commands">';
-        echo '<a id="checkattempts" href="#">' .
-                get_string('selectall', 'quiz') . '</a> / ';
-        echo '<a id="uncheckattempts" href="#">' .
-                get_string('selectnone', 'quiz') . '</a> ';
-        $PAGE->requires->js_amd_inline("
-        require(['jquery'], function($) {
-            $('#checkattempts').click(function(e) {
-                $('#attemptsform').find('input:checkbox').prop('checked', true);
-                e.preventDefault();
-            });
-            $('#uncheckattempts').click(function(e) {
-                $('#attemptsform').find('input:checkbox').prop('checked', false);
-                e.preventDefault();
-            });
-        });");
-        echo '&nbsp;&nbsp;';
         $this->submit_buttons();
         echo '</div>';
 
@@ -639,10 +650,51 @@ abstract class quiz_attempts_report_table extends table_sql {
     protected function submit_buttons() {
         global $PAGE;
         if (has_capability('mod/quiz:deleteattempts', $this->context)) {
-            echo '<input type="submit" class="btn btn-secondary m-r-1" id="deleteattemptsbutton" name="delete" value="' .
-                    get_string('deleteselected', 'quiz_overview') . '"/>';
+            $deletebuttonparams = [
+                'type'  => 'submit',
+                'class' => 'btn btn-secondary mr-1',
+                'id'    => 'deleteattemptsbutton',
+                'name'  => 'delete',
+                'value' => get_string('deleteselected', 'quiz_overview'),
+                'data-action' => 'toggle',
+                'data-togglegroup' => $this->togglegroup,
+                'data-toggle' => 'action',
+                'disabled' => true
+            ];
+            echo html_writer::empty_tag('input', $deletebuttonparams);
             $PAGE->requires->event_handler('#deleteattemptsbutton', 'click', 'M.util.show_confirm_dialog',
                     array('message' => get_string('deleteattemptcheck', 'quiz')));
         }
+    }
+
+    /**
+     * Generates the contents for the checkbox column header.
+     *
+     * It returns the HTML for a master \core\output\checkbox_toggleall component that selects/deselects all quiz attempts.
+     *
+     * @param string $columnname The name of the checkbox column.
+     * @return string
+     */
+    public function checkbox_col_header(string $columnname) {
+        global $OUTPUT;
+
+        // Make sure to disable sorting on this column.
+        $this->no_sorting($columnname);
+
+        // Build the select/deselect all control.
+        $selectallid = $this->uniqueid . '-selectall-attempts';
+        $selectalltext = get_string('selectall', 'quiz');
+        $deselectalltext = get_string('selectnone', 'quiz');
+        $mastercheckbox = new \core\output\checkbox_toggleall($this->togglegroup, true, [
+            'id' => $selectallid,
+            'name' => $selectallid,
+            'value' => 1,
+            'label' => $selectalltext,
+            'labelclasses' => 'accesshide',
+            'selectall' => $selectalltext,
+            'deselectall' => $deselectalltext,
+        ]);
+
+        return $OUTPUT->render($mastercheckbox);
     }
 }

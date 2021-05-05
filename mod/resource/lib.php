@@ -45,14 +45,6 @@ function resource_supports($feature) {
 }
 
 /**
- * Returns all other caps used in module
- * @return array
- */
-function resource_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
-}
-
-/**
  * This function is used by the reset_course_userdata function in moodlelib.
  * @param $data the data submitted from the reset course.
  * @return array status array
@@ -260,10 +252,11 @@ function resource_get_coursemodule_info($coursemodule) {
     if (($filedetails = resource_get_file_details($resource, $coursemodule)) && empty($filedetails['isref'])) {
         $displayoptions = @unserialize($resource->displayoptions);
         $displayoptions['filedetails'] = $filedetails;
-        $info->customdata = serialize($displayoptions);
+        $info->customdata['displayoptions'] = serialize($displayoptions);
     } else {
-        $info->customdata = $resource->displayoptions;
+        $info->customdata['displayoptions'] = $resource->displayoptions;
     }
+    $info->customdata['display'] = $display;
 
     return $info;
 }
@@ -278,7 +271,7 @@ function resource_cm_info_view(cm_info $cm) {
     global $CFG;
     require_once($CFG->dirroot . '/mod/resource/locallib.php');
 
-    $resource = (object)array('displayoptions' => $cm->customdata);
+    $resource = (object) ['displayoptions' => $cm->customdata['displayoptions']];
     $details = resource_get_optional_details($resource, $cm);
     if ($details) {
         $cm->set_after_link(' ' . html_writer::tag('span', $details,
@@ -567,12 +560,19 @@ function resource_check_updates_since(cm_info $cm, $from, $filter = array()) {
  * @return \core_calendar\local\event\entities\action_interface|null
  */
 function mod_resource_core_calendar_provide_event_action(calendar_event $event,
-                                                      \core_calendar\action_factory $factory) {
-    $cm = get_fast_modinfo($event->courseid)->instances['resource'][$event->instance];
+                                                      \core_calendar\action_factory $factory, $userid = 0) {
+
+    global $USER;
+
+    if (empty($userid)) {
+        $userid = $USER->id;
+    }
+
+    $cm = get_fast_modinfo($event->courseid, $userid)->instances['resource'][$event->instance];
 
     $completion = new \completion_info($cm->get_course());
 
-    $completiondata = $completion->get_data($cm, false);
+    $completiondata = $completion->get_data($cm, false, $userid);
 
     if ($completiondata->completionstate != COMPLETION_INCOMPLETE) {
         return null;
@@ -584,4 +584,29 @@ function mod_resource_core_calendar_provide_event_action(calendar_event $event,
         1,
         true
     );
+}
+
+
+/**
+ * Given an array with a file path, it returns the itemid and the filepath for the defined filearea.
+ *
+ * @param  string $filearea The filearea.
+ * @param  array  $args The path (the part after the filearea and before the filename).
+ * @return array The itemid and the filepath inside the $args path, for the defined filearea.
+ */
+function mod_resource_get_path_from_pluginfile(string $filearea, array $args) : array {
+    // Resource never has an itemid (the number represents the revision but it's not stored in database).
+    array_shift($args);
+
+    // Get the filepath.
+    if (empty($args)) {
+        $filepath = '/';
+    } else {
+        $filepath = '/' . implode('/', $args) . '/';
+    }
+
+    return [
+        'itemid' => 0,
+        'filepath' => $filepath,
+    ];
 }

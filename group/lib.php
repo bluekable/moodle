@@ -548,12 +548,20 @@ function groups_delete_group($grouporid) {
         }
     }
 
+    $context = context_course::instance($group->courseid);
+
     // delete group calendar events
     $DB->delete_records('event', array('groupid'=>$groupid));
     //first delete usage in groupings_groups
     $DB->delete_records('groupings_groups', array('groupid'=>$groupid));
     //delete members
     $DB->delete_records('groups_members', array('groupid'=>$groupid));
+
+    // Delete any members in a conversation related to this group.
+    if ($conversation = \core_message\api::get_conversation_by_area('core_group', 'groups', $groupid, $context->id)) {
+        \core_message\api::delete_all_conversation_data($conversation->id);
+    }
+
     //group itself last
     $DB->delete_records('groups', array('id'=>$groupid));
 
@@ -777,11 +785,12 @@ function groups_get_possible_roles($context) {
  * @param string $orderby The column to sort users by
  * @param int $notingroup restrict to users not in existing groups
  * @param bool $onlyactiveenrolments restrict to users who have an active enrolment in the course
+ * @param array $extrafields Extra user fields to return
  * @return array An array of the users
  */
 function groups_get_potential_members($courseid, $roleid = null, $source = null,
                                       $orderby = 'lastname ASC, firstname ASC',
-                                      $notingroup = null, $onlyactiveenrolments = false) {
+                                      $notingroup = null, $onlyactiveenrolments = false, $extrafields = []) {
     global $DB;
 
     $context = context_course::instance($courseid);
@@ -839,7 +848,8 @@ function groups_get_potential_members($courseid, $roleid = null, $source = null,
         }
     }
 
-    $allusernamefields = get_all_user_name_fields(true, 'u');
+    $userfieldsapi = \core_user\fields::for_userpic()->including(...$extrafields);
+    $allusernamefields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
     $sql = "SELECT DISTINCT u.id, u.username, $allusernamefields, u.idnumber
               FROM {user} u
               JOIN ($esql) e ON e.id = u.id
@@ -961,14 +971,15 @@ function groups_unassign_grouping($groupingid, $groupid, $invalidatecache = true
  *
  * @param int $groupid
  * @param int $courseid Course ID (should match the group's course)
- * @param string $fields List of fields from user table prefixed with u, default 'u.*'
- * @param string $sort SQL ORDER BY clause, default (when null passed) is what comes from users_order_by_sql.
+ * @param string $fields List of fields from user table (prefixed with u) and joined tables, default 'u.*'
+ * @param string|null $sort SQL ORDER BY clause, default (when null passed) is what comes from users_order_by_sql.
  * @param string $extrawheretest extra SQL conditions ANDed with the existing where clause.
- * @param array $whereorsortparams any parameters required by $extrawheretest (named parameters).
+ * @param array $whereorsortparams any parameters required by $extrawheretest or $joins (named parameters).
+ * @param string $joins any joins required to get the specified fields.
  * @return array Complex array as described above
  */
-function groups_get_members_by_role($groupid, $courseid, $fields='u.*',
-        $sort=null, $extrawheretest='', $whereorsortparams=array()) {
+function groups_get_members_by_role(int $groupid, int $courseid, string $fields = 'u.*',
+        ?string $sort = null, string $extrawheretest = '', array $whereorsortparams = [], string $joins = '') {
     global $DB;
 
     // Retrieve information about all users and their roles on the course or
@@ -992,6 +1003,7 @@ function groups_get_members_by_role($groupid, $courseid, $fields='u.*',
               JOIN {user} u ON u.id = gm.userid
          LEFT JOIN {role_assignments} ra ON (ra.userid = u.id AND ra.contextid $relatedctxsql)
          LEFT JOIN {role} r ON r.id = ra.roleid
+                   $joins
              WHERE gm.groupid=:mgroupid
                    ".$extrawheretest."
           ORDER BY r.sortorder, $sort";

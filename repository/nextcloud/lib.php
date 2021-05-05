@@ -410,7 +410,7 @@ class repository_nextcloud extends repository {
      * @param int $lifetime (ignored)
      * @param int $filter (ignored)
      * @param bool $forcedownload (ignored)
-     * @param array $options (ignored)
+     * @param array $options additional options affecting the file serving
      * @throws \repository_nextcloud\configuration_exception
      * @throws \repository_nextcloud\request_exception
      * @throws coding_exception
@@ -427,8 +427,26 @@ class repository_nextcloud extends repository {
             throw new \repository_nextcloud\request_exception(array('instance' => $repositoryname, 'errormessage' => $details));
         }
 
+        // Download for offline usage. This is strictly read-only, so the file need not be shared.
+        if (!empty($options['offline'])) {
+            // Download from system account and provide the file to the user.
+            $linkmanager = new \repository_nextcloud\access_controlled_link_manager($this->ocsclient,
+                $this->get_system_oauth_client(), $this->get_system_ocs_client(), $this->issuer, $repositoryname);
+
+            // Create temp path, then download into it.
+            $filename = basename($reference->link);
+            $tmppath = make_request_directory() . '/' . $filename;
+            $linkmanager->download_for_offline_usage($reference->link, $tmppath);
+
+            // Output the obtained file to the user and remove it from disk.
+            send_temp_file($tmppath, $filename);
+
+            // That's all.
+            return;
+        }
+
         if (!$this->client->is_logged_in()) {
-            $this->print_login_popup(['style' => 'margin-top: 250px']);
+            $this->print_login_popup(['style' => 'margin-top: 250px'], $options['embed']);
             return;
         }
 
@@ -556,7 +574,7 @@ class repository_nextcloud extends repository {
             $returnurl->param('repo_id', $this->id);
             $returnurl->param('sesskey', sesskey());
         }
-        $this->client = \core\oauth2\api::get_user_oauth_client($this->issuer, $returnurl, self::SCOPES);
+        $this->client = \core\oauth2\api::get_user_oauth_client($this->issuer, $returnurl, self::SCOPES, true);
         return $this->client;
     }
 
@@ -803,8 +821,12 @@ class repository_nextcloud extends repository {
      *
      * @param array|null $attr Custom attributes to be applied to popup div.
      */
-    private function print_login_popup($attr = null) {
-        global $OUTPUT;
+    private function print_login_popup($attr = null, $embed = false) {
+        global $OUTPUT, $PAGE;
+
+        if ($embed) {
+            $PAGE->set_pagelayout('embedded');
+        }
 
         $this->client = $this->get_user_oauth_client();
         $url = new moodle_url($this->client->get_login_url());

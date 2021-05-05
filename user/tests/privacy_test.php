@@ -28,6 +28,7 @@ global $CFG;
 use \core_privacy\tests\provider_testcase;
 use \core_user\privacy\provider;
 use \core_privacy\local\request\approved_userlist;
+use \core_privacy\local\request\transform;
 
 require_once($CFG->dirroot . "/user/lib.php");
 
@@ -59,7 +60,11 @@ class core_user_privacy_testcase extends provider_testcase {
      */
     public function test_export_user_data() {
         $this->resetAfterTest();
-        $user = $this->getDataGenerator()->create_user();
+        $user = $this->getDataGenerator()->create_user([
+            'firstaccess' => 1535760000,
+            'lastaccess' => 1541030400,
+            'currentlogin' => 1541030400,
+        ]);
         $course = $this->getDataGenerator()->create_course();
         $context = \context_user::instance($user->id);
 
@@ -111,11 +116,11 @@ class core_user_privacy_testcase extends provider_testcase {
         $courserequestdata = (array) $writer->get_data([get_string('privacy:courserequestpath', 'user')]);
         $entry = array_shift($courserequestdata);
         // Make sure that the password is not exported.
-        $this->assertFalse(array_key_exists('password', $entry));
+        $this->assertFalse(property_exists($entry, 'password'));
         // Check that some of the other fields are present.
-        $this->assertTrue(array_key_exists('fullname', $entry));
-        $this->assertTrue(array_key_exists('shortname', $entry));
-        $this->assertTrue(array_key_exists('summary', $entry));
+        $this->assertTrue(property_exists($entry, 'fullname'));
+        $this->assertTrue(property_exists($entry, 'shortname'));
+        $this->assertTrue(property_exists($entry, 'summary'));
 
          // User details.
         $userdata = (array) $writer->get_data([]);
@@ -125,6 +130,11 @@ class core_user_privacy_testcase extends provider_testcase {
         $this->assertTrue(array_key_exists('firstname', $userdata));
         $this->assertTrue(array_key_exists('lastname', $userdata));
         $this->assertTrue(array_key_exists('email', $userdata));
+        // Check access times.
+        $this->assertEquals(transform::datetime($user->firstaccess), $userdata['firstaccess']);
+        $this->assertEquals(transform::datetime($user->lastaccess), $userdata['lastaccess']);
+        $this->assertNull($userdata['lastlogin']);
+        $this->assertEquals(transform::datetime($user->currentlogin), $userdata['currentlogin']);
     }
 
     /**
@@ -136,12 +146,11 @@ class core_user_privacy_testcase extends provider_testcase {
         $user = $this->getDataGenerator()->create_user([
             'idnumber' => 'A0023',
             'emailstop' => 1,
-            'icq' => 'aksdjf98',
             'phone1' => '555 3257',
             'institution' => 'test',
             'department' => 'Science',
             'city' => 'Perth',
-            'country' => 'au'
+            'country' => 'AU'
         ]);
         $user2 = $this->getDataGenerator()->create_user();
         $course = $this->getDataGenerator()->create_course();
@@ -177,7 +186,6 @@ class core_user_privacy_testcase extends provider_testcase {
         $record = $DB->get_record('user', ['id' => $user->id]);
         $this->assertEmpty($record->idnumber);
         $this->assertEmpty($record->emailstop);
-        $this->assertEmpty($record->icq);
         $this->assertEmpty($record->phone1);
         $this->assertEmpty($record->institution);
         $this->assertEmpty($record->department);
@@ -207,12 +215,11 @@ class core_user_privacy_testcase extends provider_testcase {
         $user = $this->getDataGenerator()->create_user([
             'idnumber' => 'A0023',
             'emailstop' => 1,
-            'icq' => 'aksdjf98',
             'phone1' => '555 3257',
             'institution' => 'test',
             'department' => 'Science',
             'city' => 'Perth',
-            'country' => 'au'
+            'country' => 'AU'
         ]);
         $user2 = $this->getDataGenerator()->create_user();
         $course = $this->getDataGenerator()->create_course();
@@ -252,7 +259,6 @@ class core_user_privacy_testcase extends provider_testcase {
         $record = $DB->get_record('user', ['id' => $user->id]);
         $this->assertEmpty($record->idnumber);
         $this->assertEmpty($record->emailstop);
-        $this->assertEmpty($record->icq);
         $this->assertEmpty($record->phone1);
         $this->assertEmpty($record->institution);
         $this->assertEmpty($record->department);
@@ -313,12 +319,11 @@ class core_user_privacy_testcase extends provider_testcase {
         $user1 = $this->getDataGenerator()->create_user([
             'idnumber' => 'A0023',
             'emailstop' => 1,
-            'icq' => 'aksdjf98',
             'phone1' => '555 3257',
             'institution' => 'test',
             'department' => 'Science',
             'city' => 'Perth',
-            'country' => 'au'
+            'country' => 'AU'
         ]);
         $usercontext1 = \context_user::instance($user1->id);
         $userlist1 = new \core_privacy\local\request\userlist($usercontext1, $component);
@@ -327,12 +332,11 @@ class core_user_privacy_testcase extends provider_testcase {
         $user2 = $this->getDataGenerator()->create_user([
             'idnumber' => 'A0024',
             'emailstop' => 1,
-            'icq' => 'aksdjf981',
             'phone1' => '555 3258',
             'institution' => 'test',
             'department' => 'Science',
             'city' => 'Perth',
-            'country' => 'au'
+            'country' => 'AU'
         ]);
         $usercontext2 = \context_user::instance($user2->id);
         $userlist2 = new \core_privacy\local\request\userlist($usercontext2, $component);
@@ -353,7 +357,6 @@ class core_user_privacy_testcase extends provider_testcase {
         $record = $DB->get_record('user', ['id' => $user1->id]);
         $this->assertEmpty($record->idnumber);
         $this->assertEmpty($record->emailstop);
-        $this->assertEmpty($record->icq);
         $this->assertEmpty($record->phone1);
         $this->assertEmpty($record->institution);
         $this->assertEmpty($record->department);
@@ -377,7 +380,6 @@ class core_user_privacy_testcase extends provider_testcase {
         $record = $DB->get_record('user', ['id' => $user2->id]);
         $this->assertNotEmpty($record->idnumber);
         $this->assertNotEmpty($record->emailstop);
-        $this->assertNotEmpty($record->icq);
         $this->assertNotEmpty($record->phone1);
         $this->assertNotEmpty($record->institution);
         $this->assertNotEmpty($record->department);

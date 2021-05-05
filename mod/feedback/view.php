@@ -78,6 +78,11 @@ $preview = html_writer::link($previewlnk, $previewimg);
 
 echo $OUTPUT->heading(format_string($feedback->name) . $preview);
 
+// Render the activity information.
+$completiondetails = \core_completion\cm_completion_details::get_instance($cm, $USER->id);
+$activitydates = \core\activity_dates::get_dates_for_module($cm, $USER->id);
+echo $OUTPUT->activity_information($cm, $completiondetails, $activitydates);
+
 // Print the tabs.
 require('tabs.php');
 
@@ -97,7 +102,7 @@ if (has_capability('mod/feedback:edititems', $context)) {
     $mygroupid = groups_get_activity_group($cm);
 
     echo $groupselect.'<div class="clearer">&nbsp;</div>';
-    $summary = new mod_feedback\output\summary($feedbackcompletion, $mygroupid, true);
+    $summary = new mod_feedback\output\summary($feedbackcompletion, $mygroupid);
     echo $OUTPUT->render_from_template('mod_feedback/summary', $summary->export_for_template($OUTPUT));
 
     if ($pageaftersubmit = $feedbackcompletion->page_after_submit()) {
@@ -139,7 +144,7 @@ if ($feedbackcompletion->can_complete()) {
         } else {
             $label = get_string('complete_the_form', 'feedback');
         }
-        echo html_writer::div(html_writer::link($completeurl, $label, array('class' => 'btn btn-default')), 'complete-feedback');
+        echo html_writer::div(html_writer::link($completeurl, $label, array('class' => 'btn btn-secondary')), 'complete-feedback');
     } else {
         // Feedback was already submitted.
         echo $OUTPUT->notification(get_string('this_feedback_is_already_submitted', 'feedback'));

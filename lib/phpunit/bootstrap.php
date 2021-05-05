@@ -50,7 +50,6 @@ if (!defined('IGNORE_COMPONENT_CACHE')) {
 
 require_once(__DIR__.'/bootstraplib.php');
 require_once(__DIR__.'/../testing/lib.php');
-require_once(__DIR__.'/classes/autoloader.php');
 
 if (isset($_SERVER['REMOTE_ADDR'])) {
     phpunit_bootstrap_error(1, 'Unit tests can be executed only from command line!');
@@ -79,8 +78,6 @@ if ($phpunitversion === '@package_version@') {
     phpunit_bootstrap_error(PHPUNIT_EXITCODE_PHPUNITWRONG, $phpunitversion);
 }
 unset($phpunitversion);
-
-define('NO_OUTPUT_BUFFERING', true);
 
 // only load CFG from config.php, stop ASAP in lib/setup.php
 define('ABORT_AFTER_CONFIG', true);

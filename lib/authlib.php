@@ -598,14 +598,16 @@ class auth_plugin_base {
      * @return array list of custom fields.
      */
     public function get_custom_user_profile_fields() {
-        global $DB;
+        global $CFG;
+        require_once($CFG->dirroot . '/user/profile/lib.php');
+
         // If already retrieved then return.
         if (!is_null($this->customfields)) {
             return $this->customfields;
         }
 
         $this->customfields = array();
-        if ($proffields = $DB->get_records('user_info_field')) {
+        if ($proffields = profile_get_custom_fields()) {
             foreach ($proffields as $proffield) {
                 $this->customfields[] = 'profile_field_'.$proffield->shortname;
             }
@@ -757,6 +759,53 @@ class auth_plugin_base {
             $data[] = $idp;
         }
         return $data;
+    }
+
+    /**
+     * Returns information on how the specified user can change their password.
+     *
+     * @param stdClass $user A user object
+     * @return string[] An array of strings with keys subject and message
+     */
+    public function get_password_change_info(stdClass $user) : array {
+
+        global $USER;
+
+        $site = get_site();
+        $systemcontext = context_system::instance();
+
+        $data = new stdClass();
+        $data->firstname = $user->firstname;
+        $data->lastname  = $user->lastname;
+        $data->username  = $user->username;
+        $data->sitename  = format_string($site->fullname);
+        $data->admin     = generate_email_signoff();
+
+        // This is a workaround as change_password_url() is designed to allow
+        // use of the $USER global. See MDL-66984.
+        $olduser = $USER;
+        $USER = $user;
+        if ($this->can_change_password() and $this->change_password_url()) {
+            // We have some external url for password changing.
+            $data->link = $this->change_password_url()->out();
+        } else {
+            // No way to change password, sorry.
+            $data->link = '';
+        }
+        $USER = $olduser;
+
+        if (!empty($data->link) and has_capability('moodle/user:changeownpassword', $systemcontext, $user->id)) {
+            $subject = get_string('emailpasswordchangeinfosubject', '', format_string($site->fullname));
+            $message = get_string('emailpasswordchangeinfo', '', $data);
+        } else {
+            $subject = get_string('emailpasswordchangeinfosubject', '', format_string($site->fullname));
+            $message = get_string('emailpasswordchangeinfofail', '', $data);
+        }
+
+        return [
+            'subject' => $subject,
+            'message' => $message
+        ];
     }
 }
 
@@ -979,15 +1028,35 @@ function signup_validate_data($data, $files) {
     if (! validate_email($data['email'])) {
         $errors['email'] = get_string('invalidemail');
 
-    } else if ($DB->record_exists('user', array('email' => $data['email']))) {
-        $errors['email'] = get_string('emailexists') . ' ' .
-                get_string('emailexistssignuphint', 'moodle',
-                        html_writer::link(new moodle_url('/login/forgot_password.php'), get_string('emailexistshintlink')));
+    } else if (empty($CFG->allowaccountssameemail)) {
+        // Emails in Moodle as case-insensitive and accents-sensitive. Such a combination can lead to very slow queries
+        // on some DBs such as MySQL. So we first get the list of candidate users in a subselect via more effective
+        // accent-insensitive query that can make use of the index and only then we search within that limited subset.
+        $sql = "SELECT 'x'
+                  FROM {user}
+                 WHERE " . $DB->sql_equal('email', ':email1', false, true) . "
+                   AND id IN (SELECT id
+                                FROM {user}
+                               WHERE " . $DB->sql_equal('email', ':email2', false, false) . "
+                                 AND mnethostid = :mnethostid)";
+
+        $params = array(
+            'email1' => $data['email'],
+            'email2' => $data['email'],
+            'mnethostid' => $CFG->mnet_localhost_id,
+        );
+
+        // If there are other user(s) that already have the same email, show an error.
+        if ($DB->record_exists_sql($sql, $params)) {
+            $forgotpasswordurl = new moodle_url('/login/forgot_password.php');
+            $forgotpasswordlink = html_writer::link($forgotpasswordurl, get_string('emailexistshintlink'));
+            $errors['email'] = get_string('emailexists') . ' ' . get_string('emailexistssignuphint', 'moodle', $forgotpasswordlink);
+        }
     }
     if (empty($data['email2'])) {
         $errors['email2'] = get_string('missingemail');
 
-    } else if ($data['email2'] != $data['email']) {
+    } else if (core_text::strtolower($data['email2']) != core_text::strtolower($data['email'])) {
         $errors['email2'] = get_string('invalidemail');
     }
     if (!isset($errors['email'])) {
@@ -996,8 +1065,16 @@ function signup_validate_data($data, $files) {
         }
     }
 
+    // Construct fake user object to check password policy against required information.
+    $tempuser = new stdClass();
+    $tempuser->id = 1;
+    $tempuser->username = $data['username'];
+    $tempuser->firstname = $data['firstname'];
+    $tempuser->lastname = $data['lastname'];
+    $tempuser->email = $data['email'];
+
     $errmsg = '';
-    if (!check_password_policy($data['password'], $errmsg)) {
+    if (!check_password_policy($data['password'], $errmsg, $tempuser)) {
         $errors['password'] = $errmsg;
     }
 
@@ -1027,7 +1104,7 @@ function signup_setup_new_user($user) {
     $user->secret      = random_string(15);
     $user->auth        = $CFG->registerauth;
     // Initialize alternate name fields to empty strings.
-    $namefields = array_diff(get_all_user_name_fields(), useredit_get_required_name_fields());
+    $namefields = array_diff(\core_user\fields::get_name_fields(), useredit_get_required_name_fields());
     foreach ($namefields as $namefield) {
         $user->$namefield = '';
     }
@@ -1084,7 +1161,8 @@ function signup_is_enabled() {
  * @since Moodle 3.3
  */
 function display_auth_lock_options($settings, $auth, $userfields, $helptext, $mapremotefields, $updateremotefields, $customfields = array()) {
-    global $DB;
+    global $CFG;
+    require_once($CFG->dirroot . '/user/profile/lib.php');
 
     // Introductory explanation and help text.
     if ($mapremotefields) {
@@ -1105,7 +1183,8 @@ function display_auth_lock_options($settings, $auth, $userfields, $helptext, $ma
     // Generate the list of profile fields to allow updates / lock.
     if (!empty($customfields)) {
         $userfields = array_merge($userfields, $customfields);
-        $customfieldname = $DB->get_records('user_info_field', null, '', 'shortname, name');
+        $allcustomfields = profile_get_custom_fields();
+        $customfieldname = array_combine(array_column($allcustomfields, 'shortname'), $allcustomfields);
     }
 
     foreach ($userfields as $field) {
@@ -1125,8 +1204,6 @@ function display_auth_lock_options($settings, $auth, $userfields, $helptext, $ma
                 // limit for the setting name is 100.
                 $fieldnametoolong = true;
             }
-        } else if ($fieldname == 'url') {
-            $fieldname = get_string('webpage');
         } else {
             $fieldname = get_string($fieldname);
         }

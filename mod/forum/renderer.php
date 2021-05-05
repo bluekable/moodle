@@ -48,15 +48,17 @@ class mod_forum_renderer extends plugin_renderer_base {
             if ($prev) {
                 $url = new moodle_url('/mod/forum/discuss.php', array('d' => $prev->id));
                 $html .= html_writer::start_tag('li', array('class' => 'prev-discussion'));
-                $html .= html_writer::link($url, format_string($prev->name),
-                    array('aria-label' => get_string('prevdiscussiona', 'mod_forum', format_string($prev->name))));
+                $html .= html_writer::link($url, $this->output->larrow() . ' ' . format_string($prev->name),
+                    array('aria-label' => get_string('prevdiscussiona', 'mod_forum', format_string($prev->name)),
+                    'class' => 'btn btn-link'));
                 $html .= html_writer::end_tag('li');
             }
             if ($next) {
                 $url = new moodle_url('/mod/forum/discuss.php', array('d' => $next->id));
                 $html .= html_writer::start_tag('li', array('class' => 'next-discussion'));
-                $html .= html_writer::link($url, format_string($next->name),
-                    array('aria-label' => get_string('nextdiscussiona', 'mod_forum', format_string($next->name))));
+                $html .= html_writer::link($url, format_string($next->name) . ' ' . $this->output->rarrow(),
+                    array('aria-label' => get_string('nextdiscussiona', 'mod_forum', format_string($next->name)),
+                    'class' => 'btn btn-link'));
                 $html .= html_writer::end_tag('li');
             }
             $html .= html_writer::end_tag('ul');
@@ -123,7 +125,8 @@ class mod_forum_renderer extends plugin_renderer_base {
             $output .= $this->output->heading(get_string("invalidmodule", "error"));
         } else {
             $cm = $modinfo->instances['forum'][$forum->id];
-            $canviewemail = in_array('email', get_extra_user_fields(context_module::instance($cm->id)));
+            // TODO Does not support custom user profile fields (MDL-70456).
+            $canviewemail = in_array('email', \core_user\fields::get_identity_fields(context_module::instance($cm->id), false));
             $strparams = new stdclass();
             $strparams->name = format_string($forum->name);
             $strparams->count = count($users);

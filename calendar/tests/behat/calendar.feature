@@ -14,6 +14,8 @@ Feature: Perform basic calendar functionality
     And the following "courses" exist:
       | fullname | shortname | format |
       | Course 1 | C1 | topics |
+      | Course 2 | C2 | topics |
+      | Course 3 | C3 | topics |
     And the following "course enrolments" exist:
       | user | course | role |
       | student1 | C1 | student |
@@ -169,14 +171,79 @@ Feature: Perform basic calendar functionality
     And I follow "This month"
     And I click on "New event" "button"
     When I click on "Save" "button"
-    Then I should see "Required"
+    Then I should see "Required" in the "Event title" "form_row"
     And I am on homepage
     And I follow "This month"
     And I click on "New event" "button"
+    And I set the field "Event title" to "Really awesome event!"
     And I set the field "Type of event" to "Course"
     When I click on "Save" "button"
-    Then I should see "Required"
-    And I should see "Select a course"
-    And I set the field "Event title" to "Really awesome event!"
-    When I click on "Save" "button"
-    Then I should see "Select a course"
+    And I should see "Select a course" in the "Course" "form_row"
+
+  @javascript
+  Scenario: Default event type selection in the event form
+    Given I log in as "teacher1"
+    When I am viewing site calendar
+    And I click on "New event" "button"
+    Then the field "Type of event" matches value "User"
+    And I am on "Course 1" course homepage
+    And I follow "This month"
+    When I click on "New event" "button"
+    Then the field "Type of event" matches value "Course"
+
+  @javascript
+  Scenario: Admin can only see all courses if calendar_adminseesall setting is enabled.
+    Given I log in as "admin"
+    And I am on "Course 1" course homepage
+    And I enrol "admin" user as "Teacher"
+    And I am viewing site calendar
+    And I click on "New event" "button"
+    And I set the field "Type of event" to "Course"
+    When I expand the "Course" autocomplete
+    Then "Course 1" "autocomplete_suggestions" should exist
+    And "Course 2" "autocomplete_suggestions" should not exist
+    And "Course 3" "autocomplete_suggestions" should not exist
+    And I click on "Close" "button"
+    And I am on site homepage
+    And I navigate to "Appearance > Calendar" in site administration
+    And I set the field "Admins see all" to "1"
+    And I press "Save changes"
+    And I am viewing site calendar
+    And I click on "New event" "button"
+    And I set the field "Type of event" to "Course"
+    When I expand the "Course" autocomplete
+    Then "Course 1" "autocomplete_suggestions" should exist
+    And "Course 2" "autocomplete_suggestions" should exist
+    And "Course 3" "autocomplete_suggestions" should exist
+
+  @javascript
+  Scenario: Students can only see user event type by default.
+    Given I log in as "student1"
+    And I am viewing site calendar
+    When I click on "New event" "button"
+    Then I should see "User" in the "div#fitem_id_staticeventtype" "css_element"
+    And I am on "Course 1" course homepage
+    And I follow "This month"
+    When I click on "New event" "button"
+    Then I should see "User" in the "div#fitem_id_staticeventtype" "css_element"
+    And I click on "Close" "button"
+    And I log out
+    Given I log in as "admin"
+    And I navigate to "Appearance > Calendar" in site administration
+    And I set the field "Admins see all" to "1"
+    And I press "Save changes"
+    And I log out
+    Given I log in as "student1"
+    And I am on "Course 1" course homepage
+    And I follow "This month"
+    When I click on "New event" "button"
+    Then I should see "User" in the "div#fitem_id_staticeventtype" "css_element"
+
+  @javascript @accessibility
+  Scenario: The calendar page must be accessible
+    Given I log in as "student1"
+    And I am on "Course 1" course homepage
+    When I follow "This month"
+    Then the page should meet accessibility standards
+    And the page should meet "wcag131, wcag143, wcag412" accessibility standards
+    And the page should meet accessibility standards with "wcag131, wcag143, wcag412" extra tests

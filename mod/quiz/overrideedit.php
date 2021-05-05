@@ -76,6 +76,16 @@ require_capability('mod/quiz:manageoverrides', $context);
 if ($overrideid) {
     // Editing an override.
     $data = clone $override;
+
+    if ($override->groupid) {
+        if (!groups_group_visible($override->groupid, $course, $cm)) {
+            print_error('invalidoverrideid', 'quiz');
+        }
+    } else {
+        if (!groups_user_groups_visible($course, $override->userid, $cm)) {
+            print_error('invalidoverrideid', 'quiz');
+        }
+    }
 } else {
     // Creating a new override.
     $data = new stdClass();
@@ -166,6 +176,8 @@ if ($mform->is_cancelled()) {
     if (!empty($override->id)) {
         $fromform->id = $override->id;
         $DB->update_record('quiz_overrides', $fromform);
+        $cachekey = $groupmode ? "{$fromform->quiz}_g_{$fromform->groupid}" : "{$fromform->quiz}_u_{$fromform->userid}";
+        cache::make('mod_quiz', 'overrides')->delete($cachekey);
 
         // Determine which override updated event to fire.
         $params['objectid'] = $override->id;
@@ -182,6 +194,8 @@ if ($mform->is_cancelled()) {
     } else {
         unset($fromform->id);
         $fromform->id = $DB->insert_record('quiz_overrides', $fromform);
+        $cachekey = $groupmode ? "{$fromform->quiz}_g_{$fromform->groupid}" : "{$fromform->quiz}_u_{$fromform->userid}";
+        cache::make('mod_quiz', 'overrides')->delete($cachekey);
 
         // Determine which override created event to fire.
         $params['objectid'] = $fromform->id;

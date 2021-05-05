@@ -23,12 +23,13 @@
  */
 
 namespace assignfeedback_editpdf;
+use setasign\Fpdi\TcpdfFpdi;
 
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 require_once($CFG->libdir.'/pdflib.php');
-require_once($CFG->dirroot.'/mod/assign/feedback/editpdf/fpdi/fpdi.php');
+require_once($CFG->dirroot.'/mod/assign/feedback/editpdf/fpdi/autoload.php');
 
 /**
  * Library code for manipulating PDFs
@@ -37,7 +38,7 @@ require_once($CFG->dirroot.'/mod/assign/feedback/editpdf/fpdi/fpdi.php');
  * @copyright 2012 Davo Smith
  * @license   http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class pdf extends \FPDI {
+class pdf extends TcpdfFpdi {
 
     /** @var int the number of the current page in the PDF being processed */
     protected $currentpage = 0;
@@ -70,7 +71,8 @@ class pdf extends \FPDI {
     const MIN_ANNOTATION_HEIGHT = 5;
     /** Blank PDF file used during error. */
     const BLANK_PDF = '/mod/assign/feedback/editpdf/fixtures/blank.pdf';
-
+    /** Page image file name prefix*/
+    const IMAGE_PAGE = 'image_page';
     /**
      * Get the name of the font to use in generated PDF files.
      * If $CFG->pdfexportfont is set - use it, otherwise use "freesans" as this
@@ -208,14 +210,11 @@ class pdf extends \FPDI {
         // Get the size (and deduce the orientation) of the next page.
         $template = $this->importPage($pageno);
         $size = $this->getTemplateSize($template);
-        $orientation = 'P';
-        if ($size['w'] > $size['h']) {
-            $orientation = 'L';
-        }
+
         // Create a page of the required size / orientation.
-        $this->AddPage($orientation, array($size['w'], $size['h']));
+        $this->AddPage($size['orientation'], array($size['width'], $size['height']));
         // Prevent new page creation when comments are at the bottom of a page.
-        $this->setPageOrientation($orientation, false, 0);
+        $this->setPageOrientation($size['orientation'], false, 0);
         // Fill in the page with the original contents from the student.
         $this->useTemplate($template);
     }
@@ -396,7 +395,7 @@ class pdf extends \FPDI {
      * @param string $imagefolder - Folder containing stamp images.
      * @return bool true if successful (always)
      */
-    public function add_annotation($sx, $sy, $ex, $ey, $colour = 'yellow', $type = 'line', $path, $imagefolder) {
+    public function add_annotation($sx, $sy, $ex, $ey, $colour, $type, $path, $imagefolder) {
         global $CFG;
         if (!$this->filename) {
             return false;
@@ -537,8 +536,6 @@ class pdf extends \FPDI {
      * @return string the filename of the generated image
      */
     public function get_image($pageno) {
-        global $CFG;
-
         if (!$this->filename) {
             throw new \coding_exception('Attempting to generate a page image without first setting the PDF filename');
         }
@@ -551,7 +548,7 @@ class pdf extends \FPDI {
             throw new \coding_exception('The specified image output folder is not a valid folder');
         }
 
-        $imagefile = $this->imagefolder.'/image_page' . $pageno . '.png';
+        $imagefile = $this->imagefolder . '/' . self::IMAGE_PAGE . $pageno . '.png';
         $generate = true;
         if (file_exists($imagefile)) {
             if (filemtime($imagefile) > filemtime($this->filename)) {
@@ -561,15 +558,7 @@ class pdf extends \FPDI {
         }
 
         if ($generate) {
-            // Use ghostscript to generate an image of the specified page.
-            $gsexec = \escapeshellarg($CFG->pathtogs);
-            $imageres = \escapeshellarg(100);
-            $imagefilearg = \escapeshellarg($imagefile);
-            $filename = \escapeshellarg($this->filename);
-            $pagenoinc = \escapeshellarg($pageno + 1);
-            $command = "$gsexec -q -sDEVICE=png16m -dSAFER -dBATCH -dNOPAUSE -r$imageres -dFirstPage=$pagenoinc -dLastPage=$pagenoinc ".
-                "-dDOINTERPOLATE -dGraphicsAlphaBits=4 -dTextAlphaBits=4 -sOutputFile=$imagefilearg $filename";
-
+            $command = $this->get_command_for_image($pageno, $imagefile);
             $output = null;
             $result = exec($command, $output);
             if (!file_exists($imagefile)) {
@@ -583,7 +572,62 @@ class pdf extends \FPDI {
             }
         }
 
-        return 'image_page'.$pageno.'.png';
+        return self::IMAGE_PAGE . $pageno . '.png';
+    }
+
+    /**
+     * Gets the command to use to extract as image the given $pageno page number
+     * from a PDF document into the $imagefile file.
+     * @param int $pageno Page number to extract from document.
+     * @param string $imagefile Target filename for the PNG image as absolute path.
+     * @return string The command to use to extract a page as PNG image.
+     */
+    private function get_command_for_image(int $pageno, string $imagefile): string {
+        global $CFG;
+
+        // First, quickest convertion option.
+        if (!empty($CFG->pathtopdftoppm) && is_executable($CFG->pathtopdftoppm)) {
+            return $this->get_pdftoppm_command_for_image($pageno, $imagefile);
+        }
+
+        // Otherwise, rely on default behaviour.
+        return $this->get_gs_command_for_image($pageno, $imagefile);
+    }
+
+    /**
+     * Gets the pdftoppm command to use to extract as image the given $pageno page number
+     * from a PDF document into the $imagefile file.
+     * @param int $pageno Page number to extract from document.
+     * @param string $imagefile Target filename for the PNG image as absolute path.
+     * @return string The pdftoppm command to use to extract a page as PNG image.
+     */
+    private function get_pdftoppm_command_for_image(int $pageno, string $imagefile): string {
+        global $CFG;
+        $pdftoppmexec = \escapeshellarg($CFG->pathtopdftoppm);
+        $imageres = \escapeshellarg(100);
+        $imagefile = substr($imagefile, 0, -4); // Pdftoppm tool automatically adds extension file.
+        $imagefilearg = \escapeshellarg($imagefile);
+        $filename = \escapeshellarg($this->filename);
+        $pagenoinc = \escapeshellarg($pageno + 1);
+        return "$pdftoppmexec -q -r $imageres -f $pagenoinc -l $pagenoinc -png -singlefile $filename $imagefilearg";
+    }
+
+    /**
+     * Gets the ghostscript (gs) command to use to extract as image the given $pageno page number
+     * from a PDF document into the $imagefile file.
+     * @param int $pageno Page number to extract from document.
+     * @param string $imagefile Target filename for the PNG image as absolute path.
+     * @return string The ghostscript (gs) command to use to extract a page as PNG image.
+     */
+    private function get_gs_command_for_image(int $pageno, string $imagefile): string {
+        global $CFG;
+        $gsexec = \escapeshellarg($CFG->pathtogs);
+        $imageres = \escapeshellarg(100);
+        $imagefilearg = \escapeshellarg($imagefile);
+        $filename = \escapeshellarg($this->filename);
+        $pagenoinc = \escapeshellarg($pageno + 1);
+        return "$gsexec -q -sDEVICE=png16m -dSAFER -dBATCH -dNOPAUSE -r$imageres -dFirstPage=$pagenoinc -dLastPage=$pagenoinc ".
+            "-dDOINTERPOLATE -dGraphicsAlphaBits=4 -dTextAlphaBits=4 -sOutputFile=$imagefilearg $filename";
     }
 
     /**
@@ -689,7 +733,7 @@ class pdf extends \FPDI {
         $pdf->set_image_folder($tmperrorimagefolder);
         $image = $pdf->get_image(0);
         $pdf->Close(); // PDF loaded and never saved/outputted needs to be closed.
-        $newimg = 'image_page' . $pageno . '.png';
+        $newimg = self::IMAGE_PAGE . $pageno . '.png';
 
         copy($tmperrorimagefolder . '/' . $image, $errorimagefolder . '/' . $newimg);
         return $newimg;
@@ -736,7 +780,11 @@ class pdf extends \FPDI {
         }
 
         $testimagefolder = \make_temp_directory('assignfeedback_editpdf_test');
-        @unlink($testimagefolder.'/image_page0.png'); // Delete any previous test images.
+        $filepath = $testimagefolder . '/' . self::IMAGE_PAGE . '0.png';
+        // Delete any previous test images, if they exist.
+        if (file_exists($filepath)) {
+            unlink($filepath);
+        }
 
         $pdf = new pdf();
         $pdf->set_pdf($testfile);
@@ -761,10 +809,46 @@ class pdf extends \FPDI {
         require_once($CFG->libdir.'/filelib.php');
 
         $testimagefolder = \make_temp_directory('assignfeedback_editpdf_test');
-        $testimage = $testimagefolder.'/image_page0.png';
+        $testimage = $testimagefolder . '/' . self::IMAGE_PAGE . '0.png';
         send_file($testimage, basename($testimage), 0);
         die();
     }
 
+    /**
+     * This function add an image file to PDF page.
+     * @param \stored_file $imagestoredfile Image file to be added
+     */
+    public function add_image_page($imagestoredfile) {
+        $imageinfo = $imagestoredfile->get_imageinfo();
+        $imagecontent = $imagestoredfile->get_content();
+        $this->currentpage++;
+        $template = $this->importPage($this->currentpage);
+        $size = $this->getTemplateSize($template);
+
+        if ($imageinfo["width"] > $imageinfo["height"]) {
+            if ($size['width'] < $size['height']) {
+                $temp = $size['width'];
+                $size['width'] = $size['height'];
+                $size['height'] = $temp;
+            }
+        } else if ($imageinfo["width"] < $imageinfo["height"]) {
+            if ($size['width'] > $size['height']) {
+                $temp = $size['width'];
+                $size['width'] = $size['height'];
+                $size['height'] = $temp;
+            }
+        }
+        $orientation = $size['orientation'];
+        $this->SetHeaderMargin(0);
+        $this->SetFooterMargin(0);
+        $this->SetMargins(0, 0, 0, true);
+        $this->setPrintFooter(false);
+        $this->setPrintHeader(false);
+
+        $this->AddPage($orientation, $size);
+        $this->SetAutoPageBreak(false, 0);
+        $this->Image('@' . $imagecontent, 0, 0, $size['w'], $size['h'],
+            '', '', '', false, null, '', false, false, 0);
+    }
 }
 

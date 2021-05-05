@@ -26,6 +26,8 @@
  */
 
 defined('MOODLE_INTERNAL') || die();
+use core\navigation\views\primary;
+use core\navigation\views\secondary;
 
 /**
  * $PAGE is a central store of information about the current page we are
@@ -79,6 +81,9 @@ defined('MOODLE_INTERNAL') || die();
  * @property-read array $layout_options An arrays with options for the layout file.
  * @property-read array $legacythemeinuse True if the legacy browser theme is in use.
  * @property-read navbar $navbar The navbar object used to display the navbar
+ * @property-read secondary $secondarynav The secondary navigation object
+ *      used to display the secondarynav in boost
+ * @property-read primary $primarynav The primary navigation object used to display the primary nav in boost
  * @property-read global_navigation $navigation The navigation structure for this page.
  * @property-read xhtml_container_stack $opencontainers Tracks XHTML tags on this page that have been opened but not closed.
  *      mainly for internal use by the rendering code.
@@ -295,6 +300,18 @@ class moodle_page {
     protected $_flatnav = null;
 
     /**
+     * @var secondary Contains the nav nodes that will appear
+     * in the secondary navigation.
+     */
+    protected $_secondarynav = null;
+
+    /**
+     * @var primary Contains the nav nodes that will appear
+     * in the primary navigation.
+     */
+    protected $_primarynav = null;
+
+    /**
      * @var navbar Contains the navbar structure.
      */
     protected $_navbar = null;
@@ -352,6 +369,16 @@ class moodle_page {
      * This is only used by themes that use the settings menu.
      */
     protected $_forcesettingsmenu = false;
+
+    /**
+     * @var array Array of header actions HTML to add to the page header actions menu.
+     */
+    protected $_headeractions = [];
+
+    /**
+     * @var bool Should the region main settings menu be rendered in the header.
+     */
+    protected $_regionmainsettingsinheader = false;
 
     /**
      * Force the settings menu to be displayed on this page. This will only force the
@@ -771,6 +798,30 @@ class moodle_page {
             $this->_flatnav->initialise();
         }
         return $this->_flatnav;
+    }
+
+    /**
+     * Returns the secondary navigation object
+     * @return secondary
+     */
+    protected function magic_get_secondarynav() {
+        if ($this->_secondarynav === null) {
+            $this->_secondarynav = new secondary($this);
+            $this->_secondarynav->initialise();
+        }
+        return $this->_secondarynav;
+    }
+
+    /**
+     * Returns the primary navigation object
+     * @return primary
+     */
+    protected function magic_get_primarynav() {
+        if ($this->_primarynav === null) {
+            $this->_primarynav = new primary($this);
+            $this->_primarynav->initialise();
+        }
+        return $this->_primarynav;
     }
 
     /**
@@ -1231,9 +1282,10 @@ class moodle_page {
      * This is normally used as the main heading at the top of the content.
      *
      * @param string $heading the main heading that should be displayed at the top of the <body>.
+     * @param bool $applyformatting apply format_string() - by default true.
      */
-    public function set_heading($heading) {
-        $this->_heading = format_string($heading);
+    public function set_heading($heading, bool $applyformatting = true) {
+        $this->_heading = $applyformatting ? format_string($heading) : clean_text($heading);
     }
 
     /**
@@ -1460,29 +1512,17 @@ class moodle_page {
     }
 
     /**
-     * This function indicates that current page requires the https when $CFG->loginhttps enabled.
-     * Since loginhttps was removed this is no longer required or functional.
-     *
-     * @deprecated since Moodle 3.4 MDL-42834 - please do not use this function any more.
-     * @todo MDL-46267 This will be deleted in Moodle 3.8
-     *
-     * @throws coding_exception
+     * @deprecated since Moodle 3.4
      */
     public function https_required() {
-        debugging('https_required() has been deprecated. It no longer needs to be called.', DEBUG_DEVELOPER);
+        throw new coding_exception('https_required() cannot be used anymore.');
     }
 
     /**
-     * Makes sure that page previously marked with https_required() is really using https://, if not it redirects to https://
-     * Since loginhttps was removed this is no longer required or functional.
-     *
-     * @deprecated since Moodle 3.4 MDL-42834 - please do not use this function any more.
-     * @todo MDL-46267 This will be deleted in Moodle 3.8
-     *
-     * @throws coding_exception
+     * @deprecated since Moodle 3.4
      */
     public function verify_https_required() {
-        debugging('verify_https_required() has been deprecated. It no longer needs to be called.', DEBUG_DEVELOPER);
+        throw new coding_exception('verify_https_required() cannot be used anymore.');
     }
 
     // Initialisation methods =====================================================
@@ -1554,11 +1594,6 @@ class moodle_page {
         }
 
         $this->_theme->setup_blocks($this->pagelayout, $this->blocks);
-        if ($this->_theme->enable_dock && !empty($CFG->allowblockstodock)) {
-            $this->requires->strings_for_js(array('addtodock', 'undockitem', 'dockblock', 'undockblock', 'undockall', 'hidedockpanel', 'hidepanel'), 'block');
-            $this->requires->string_for_js('thisdirectionvertical', 'langconfig');
-            $this->requires->yui_module('moodle-core-dock-loader', 'M.core.dock.loader.initLoader');
-        }
 
         if ($this === $PAGE) {
             $target = null;
@@ -1577,6 +1612,15 @@ class moodle_page {
         }
 
         $this->_wherethemewasinitialised = debug_backtrace();
+    }
+
+    /**
+     * For diagnostic/debugging purposes, find where the theme setup was triggered.
+     *
+     * @return null|array null if theme not yet setup. Stacktrace if it was.
+     */
+    public function get_where_theme_was_initialised() {
+        return $this->_wherethemewasinitialised;
     }
 
     /**
@@ -1616,7 +1660,8 @@ class moodle_page {
         }
 
         $mnetpeertheme = '';
-        if (isloggedin() and isset($CFG->mnet_localhost_id) and $USER->mnethostid != $CFG->mnet_localhost_id) {
+        $mnetvarsok = isset($CFG->mnet_localhost_id) && isset($USER->mnethostid);
+        if (isloggedin() and $mnetvarsok and $USER->mnethostid != $CFG->mnet_localhost_id) {
             require_once($CFG->dirroot.'/mnet/peer.php');
             $mnetpeer = new mnet_peer();
             $mnetpeer->set_id($USER->mnethostid);
@@ -2047,6 +2092,45 @@ class moodle_page {
             $reportnode = $myprofilenode->add(get_string('reports'));
         }
         // Finally add the report to the navigation tree.
-        $reportnode->add($nodeinfo['name'], $nodeinfo['url'], navigation_node::TYPE_COURSE);
+        $reportnode->add($nodeinfo['name'], $nodeinfo['url'], navigation_node::TYPE_CUSTOM, null, null,
+            new pix_icon('i/report', $nodeinfo['name']));
+    }
+
+    /**
+     * Add some HTML to the list of actions to render in the header actions menu.
+     *
+     * @param string $html The HTML to add.
+     */
+    public function add_header_action(string $html) : void {
+        $this->_headeractions[] = $html;
+    }
+
+    /**
+     * Get the list of HTML for actions to render in the header actions menu.
+     *
+     * @return string[]
+     */
+    public function get_header_actions() : array {
+        return $this->_headeractions;
+    }
+
+    /**
+     * Set the flag to indicate if the region main settings should be rendered as an action
+     * in the header actions menu rather than at the top of the content.
+     *
+     * @param bool $value If the settings should be in the header.
+     */
+    public function set_include_region_main_settings_in_header_actions(bool $value) : void {
+        $this->_regionmainsettingsinheader = $value;
+    }
+
+    /**
+     * Check if the  region main settings should be rendered as an action in the header actions
+     * menu rather than at the top of the content.
+     *
+     * @return bool
+     */
+    public function include_region_main_settings_in_header_actions() : bool {
+        return $this->_regionmainsettingsinheader;
     }
 }

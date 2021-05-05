@@ -61,21 +61,22 @@ class comment_manager {
         }
         $comments = array();
 
-        $usernamefields = get_all_user_name_fields(true, 'u');
+        $userfieldsapi = \core_user\fields::for_name();
+        $usernamefields = $userfieldsapi->get_sql('u', false, '', '', false)->selects;
         $sql = "SELECT c.id, c.contextid, c.itemid, c.component, c.commentarea, c.userid, c.content, $usernamefields, c.timecreated
                   FROM {comments} c
                   JOIN {user} u
                        ON u.id=c.userid
               ORDER BY c.timecreated ASC";
         $rs = $DB->get_recordset_sql($sql, null, $start, $this->perpage);
-        $formatoptions = array('overflowdiv' => true);
+        $formatoptions = array('overflowdiv' => true, 'blanktarget' => true);
         foreach ($rs as $item) {
             // Set calculated fields
             $item->fullname = fullname($item);
             $item->time = userdate($item->timecreated);
             $item->content = format_text($item->content, FORMAT_MOODLE, $formatoptions);
             // Unset fields not related to the comment
-            foreach (get_all_user_name_fields() as $namefield) {
+            foreach (\core_user\fields::get_name_fields() as $namefield) {
                 unset($item->$namefield);
             }
             unset($item->timecreated);
@@ -158,7 +159,7 @@ class comment_manager {
         $table = new html_table();
         $table->head = array (
             html_writer::checkbox('selectall', '', false, get_string('selectall'), array('id' => 'comment_select_all',
-                'class' => 'm-r-1')),
+                'class' => 'mr-1')),
             get_string('author', 'search'),
             get_string('content'),
             get_string('action')
@@ -170,6 +171,7 @@ class comment_manager {
 
         $link = new moodle_url('/comment/index.php', array('action' => 'delete', 'sesskey' => sesskey()));
         foreach ($comments as $c) {
+            $userdata = html_writer::link(new moodle_url('/user/profile.php', ['id' => $c->userid]), $c->fullname);
             $this->setup_plugin($c);
             if (!empty($this->plugintype)) {
                 $context_url = plugin_callback($this->plugintype, $this->pluginname, 'comment', 'url', array($c));
@@ -180,7 +182,7 @@ class comment_manager {
                 $action .= html_writer::empty_tag('br');
                 $action .= html_writer::link($context_url, get_string('commentincontext'), array('target'=>'_blank'));
             }
-            $table->data[] = array($checkbox, $c->fullname, $c->content, $action);
+            $table->data[] = array($checkbox, $userdata, $c->content, $action);
         }
         echo html_writer::table($table);
         echo $OUTPUT->paging_bar($count, $page, $this->perpage, $CFG->wwwroot.'/comment/index.php');

@@ -289,11 +289,15 @@ function report_log_print_mnet_selector_form($hostid, $course, $selecteduser=0, 
 
     // If looking at a different host, we're interested in all our site users
     if ($hostid == $CFG->mnet_localhost_id && $course->id != SITEID) {
-        $courseusers = get_enrolled_users($context, '', $selectedgroup, 'u.id, ' . get_all_user_name_fields(true, 'u'),
+        $userfieldsapi = \core_user\fields::for_name();
+        $courseusers = get_enrolled_users($context, '', $selectedgroup, 'u.id, ' .
+                $userfieldsapi->get_sql('u', false, '', '', false)->selects,
                 null, $limitfrom, $limitnum);
     } else {
         // this may be a lot of users :-(
-        $courseusers = $DB->get_records('user', array('deleted'=>0), 'lastaccess DESC', 'id, ' . get_all_user_name_fields(true),
+        $userfieldsapi = \core_user\fields::for_name();
+        $courseusers = $DB->get_records('user', array('deleted' => 0), 'lastaccess DESC', 'id, ' .
+                $userfieldsapi->get_sql('', false, '', '', false)->selects,
                 $limitfrom, $limitnum);
     }
 
@@ -376,7 +380,8 @@ function report_log_print_mnet_selector_form($hostid, $course, $selecteduser=0, 
         $section = 0;
         $thissection = array();
         foreach ($modinfo->cms as $cm) {
-            if (!$cm->uservisible || !$cm->has_view()) {
+            // Exclude activities that aren't visible or have no view link (e.g. label). Account for folder being displayed inline.
+            if (!$cm->uservisible || (!$cm->has_view() && strcmp($cm->modname, 'folder') !== 0)) {
                 continue;
             }
             if ($cm->sectionnum > 0 and $section <> $cm->sectionnum) {

@@ -468,7 +468,7 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         $expectedsubwikis[] = $teachersubwiki;
 
         $result = wiki_get_visible_subwikis($indwiki);
-        $this->assertEquals($expectedsubwikis, $result, '', 0, 10, true); // Compare without order.
+        $this->assertEqualsCanonicalizing($expectedsubwikis, $result); // Compare without order.
     }
 
     /**
@@ -544,7 +544,7 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         // Check that he can get subwikis from both groups in collaborative wiki with visible groups, and also all participants.
         $expectedsubwikis = array($swviscolallparts, $swviscolg1, $swviscolg2);
         $result = wiki_get_visible_subwikis($wikiviscol);
-        $this->assertEquals($expectedsubwikis, $result, '', 0, 10, true);
+        $this->assertEqualsCanonicalizing($expectedsubwikis, $result);
 
         // Now test it as a teacher. No need to check visible groups wikis because the result is the same as student.
         $this->setUser($teacher);
@@ -552,7 +552,7 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         // Check that he can get the subwikis from all the groups in collaborative wiki with separate groups.
         $expectedsubwikis = array($swsepcolg1, $swsepcolg2, $swsepcolallparts);
         $result = wiki_get_visible_subwikis($wikisepcol);
-        $this->assertEquals($expectedsubwikis, $result, '', 0, 10, true);
+        $this->assertEqualsCanonicalizing($expectedsubwikis, $result);
     }
 
     /**
@@ -639,12 +639,12 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         // Check that student can get the subwikis from his group in individual wiki with separate groups.
         $expectedsubwikis = array($swsepindg1s1, $swsepindg1s2);
         $result = wiki_get_visible_subwikis($wikisepind);
-        $this->assertEquals($expectedsubwikis, $result, '', 0, 10, true);
+        $this->assertEqualsCanonicalizing($expectedsubwikis, $result);
 
         // Check that he can get subwikis from all users and groups in individual wiki with visible groups.
         $expectedsubwikis = array($swvisindg1s1, $swvisindg1s2, $swvisindg2s2, $swvisindg2s3, $swvisindteacher);
         $result = wiki_get_visible_subwikis($wikivisind);
-        $this->assertEquals($expectedsubwikis, $result, '', 0, 10, true);
+        $this->assertEqualsCanonicalizing($expectedsubwikis, $result);
 
         // Now test it as a teacher. No need to check visible groups wikis because the result is the same as student.
         $this->setUser($teacher);
@@ -652,7 +652,7 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         // Check that teacher can get the subwikis from all the groups in individual wiki with separate groups.
         $expectedsubwikis = array($swsepindg1s1, $swsepindg1s2, $swsepindg2s2, $swsepindg2s3, $swsepindteacher);
         $result = wiki_get_visible_subwikis($wikisepind);
-        $this->assertEquals($expectedsubwikis, $result, '', 0, 10, true);
+        $this->assertEqualsCanonicalizing($expectedsubwikis, $result);
     }
 
     public function test_mod_wiki_get_tagged_pages() {
@@ -684,28 +684,28 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         // Admin can see everything.
         $res = mod_wiki_get_tagged_pages($tag, /*$exclusivemode = */false,
                 /*$fromctx = */0, /*$ctx = */0, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$page11->title.'/', $res->content);
-        $this->assertRegExp('/'.$page12->title.'/', $res->content);
-        $this->assertRegExp('/'.$page13->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page14->title.'/', $res->content);
-        $this->assertRegExp('/'.$page15->title.'/', $res->content);
-        $this->assertRegExp('/'.$page21->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page22->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page23->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page31->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page11->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page12->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page13->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page14->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page15->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page21->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page22->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page23->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page31->title.'/', $res->content);
         $this->assertEmpty($res->prevpageurl);
         $this->assertNotEmpty($res->nextpageurl);
         $res = mod_wiki_get_tagged_pages($tag, /*$exclusivemode = */false,
                 /*$fromctx = */0, /*$ctx = */0, /*$rec = */1, /*$page = */1);
-        $this->assertNotRegExp('/'.$page11->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page12->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page13->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page14->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page15->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page21->title.'/', $res->content);
-        $this->assertRegExp('/'.$page22->title.'/', $res->content);
-        $this->assertRegExp('/'.$page23->title.'/', $res->content);
-        $this->assertRegExp('/'.$page31->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page11->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page12->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page13->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page14->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page15->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page21->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page22->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page23->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page31->title.'/', $res->content);
         $this->assertNotEmpty($res->prevpageurl);
         $this->assertEmpty($res->nextpageurl);
 
@@ -720,22 +720,22 @@ class mod_wiki_lib_testcase extends advanced_testcase {
         // User can not see pages in course 3 because he is not enrolled.
         $res = mod_wiki_get_tagged_pages($tag, /*$exclusivemode = */false,
                 /*$fromctx = */0, /*$ctx = */0, /*$rec = */1, /*$page = */1);
-        $this->assertRegExp('/'.$page22->title.'/', $res->content);
-        $this->assertRegExp('/'.$page23->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page31->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page22->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page23->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page31->title.'/', $res->content);
 
         // User can search wiki pages inside a course.
         $coursecontext = context_course::instance($course1->id);
         $res = mod_wiki_get_tagged_pages($tag, /*$exclusivemode = */false,
                 /*$fromctx = */0, /*$ctx = */$coursecontext->id, /*$rec = */1, /*$page = */0);
-        $this->assertRegExp('/'.$page11->title.'/', $res->content);
-        $this->assertRegExp('/'.$page12->title.'/', $res->content);
-        $this->assertRegExp('/'.$page13->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page14->title.'/', $res->content);
-        $this->assertRegExp('/'.$page15->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page21->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page22->title.'/', $res->content);
-        $this->assertNotRegExp('/'.$page23->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page11->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page12->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page13->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page14->title.'/', $res->content);
+        $this->assertMatchesRegularExpression('/'.$page15->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page21->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page22->title.'/', $res->content);
+        $this->assertDoesNotMatchRegularExpression('/'.$page23->title.'/', $res->content);
         $this->assertEmpty($res->nextpageurl);
     }
 
@@ -756,6 +756,67 @@ class mod_wiki_lib_testcase extends advanced_testcase {
 
         // Decorate action event.
         $actionevent = mod_wiki_core_calendar_provide_event_action($event, $factory);
+
+        // Confirm the event was decorated.
+        $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
+        $this->assertEquals(get_string('view'), $actionevent->get_name());
+        $this->assertInstanceOf('moodle_url', $actionevent->get_url());
+        $this->assertEquals(1, $actionevent->get_item_count());
+        $this->assertTrue($actionevent->is_actionable());
+    }
+
+    public function test_wiki_core_calendar_provide_event_action_for_non_user() {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course();
+        $wiki = $this->getDataGenerator()->create_module('wiki', array('course' => $course->id));
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $wiki->id,
+                \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Now, log out.
+        $CFG->forcelogin = true; // We don't want to be logged in as guest, as guest users might still have some capabilities.
+        $this->setUser();
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_wiki_core_calendar_provide_event_action($event, $factory);
+
+        // Confirm the event is not shown at all.
+        $this->assertNull($actionevent);
+    }
+
+    public function test_wiki_core_calendar_provide_event_action_for_user() {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course();
+        $wiki = $this->getDataGenerator()->create_module('wiki', array('course' => $course->id));
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $wiki->id,
+                \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Now log out.
+        $CFG->forcelogin = true; // We don't want to be logged in as guest, as guest users might still have some capabilities.
+        $this->setUser();
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for the student.
+        $actionevent = mod_wiki_core_calendar_provide_event_action($event, $factory, $student->id);
 
         // Confirm the event was decorated.
         $this->assertInstanceOf('\core_calendar\local\event\value_objects\action', $actionevent);
@@ -794,6 +855,47 @@ class mod_wiki_lib_testcase extends advanced_testcase {
 
         // Decorate action event.
         $actionevent = mod_wiki_core_calendar_provide_event_action($event, $factory);
+
+        // Ensure result was null.
+        $this->assertNull($actionevent);
+    }
+
+    public function test_wiki_core_calendar_provide_event_action_already_completed_for_user() {
+        global $CFG;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+
+        $CFG->enablecompletion = 1;
+
+        // Create the activity.
+        $course = $this->getDataGenerator()->create_course(array('enablecompletion' => 1));
+        $wiki = $this->getDataGenerator()->create_module('wiki', array('course' => $course->id),
+                array('completion' => 2, 'completionview' => 1, 'completionexpected' => time() + DAYSECS));
+
+        // Create 2 students and enrol them into the course.
+        $student1 = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $student2 = $this->getDataGenerator()->create_and_enrol($course, 'student');
+
+        // Get some additional data.
+        $cm = get_coursemodule_from_instance('wiki', $wiki->id);
+
+        // Create a calendar event.
+        $event = $this->create_action_event($course->id, $wiki->id,
+                \core_completion\api::COMPLETION_EVENT_TYPE_DATE_COMPLETION_EXPECTED);
+
+        // Mark the activity as completed for the $student1.
+        $completion = new completion_info($course);
+        $completion->set_module_viewed($cm, $student1->id);
+
+        // Now log in as $student2.
+        $this->setUser($student2);
+
+        // Create an action factory.
+        $factory = new \core_calendar\action_factory();
+
+        // Decorate action event for $student1.
+        $actionevent = mod_wiki_core_calendar_provide_event_action($event, $factory, $student1->id);
 
         // Ensure result was null.
         $this->assertNull($actionevent);

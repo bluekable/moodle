@@ -61,7 +61,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $context = context_course::instance($course->id);
         $roleid = $this->assignUserCapability('moodle/course:viewparticipants', $context->id, 3);
         $context = context_module::instance($assign->cmid);
-        $this->assignUserCapability('mod/assign:grade', $context->id, $roleid);
+        $this->assignUserCapability('mod/assign:viewgrades', $context->id, $roleid);
 
         // Create the teacher's enrolment record.
         $userenrolmentdata['status'] = 0;
@@ -140,6 +140,13 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $this->resetAfterTest(true);
 
+        // Enable multilang filter to on content and heading.
+        filter_set_global_state('multilang', TEXTFILTER_ON);
+        filter_set_applies_to_strings('multilang', 1);
+        // Set WS filtering.
+        $wssettings = external_settings::get_instance();
+        $wssettings->set_filter(true);
+
         $category = self::getDataGenerator()->create_category(array(
             'name' => 'Test category'
         ));
@@ -166,7 +173,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         // Create the assignment module with links to a filerecord.
         $assign1 = self::getDataGenerator()->create_module('assign', array(
             'course' => $course1->id,
-            'name' => 'lightwork assignment',
+            'name' => '<span lang="en" class="multilang">English</span><span lang="es" class="multilang">Español</span>',
             'intro' => 'the assignment intro text here <a href="@@PLUGINFILE@@/intro.txt">link</a>',
             'introformat' => FORMAT_HTML,
             'markingworkflow' => 1,
@@ -221,11 +228,12 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assignment = $course['assignments'][0];
         $this->assertEquals($assign1->id, $assignment['id']);
         $this->assertEquals($course1->id, $assignment['course']);
-        $this->assertEquals('lightwork assignment', $assignment['name']);
-        $this->assertContains('the assignment intro text here', $assignment['intro']);
+        $this->assertEquals('English', $assignment['name']);
+        $this->assertStringContainsString('the assignment intro text here', $assignment['intro']);
         $this->assertNotEmpty($assignment['configs']);
         // Check the url of the file attatched.
-        $this->assertRegExp('@"' . $CFG->wwwroot . '/webservice/pluginfile.php/\d+/mod_assign/intro/intro\.txt"@', $assignment['intro']);
+        $this->assertMatchesRegularExpression(
+            '@"' . $CFG->wwwroot . '/webservice/pluginfile.php/\d+/mod_assign/intro/intro\.txt"@', $assignment['intro']);
         $this->assertEquals(1, $assignment['markingworkflow']);
         $this->assertEquals(1, $assignment['markingallocation']);
         $this->assertEquals(0, $assignment['preventsubmissionnotingroup']);
@@ -249,7 +257,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assignment = $course['assignments'][0];
         $this->assertEquals($assign1->id, $assignment['id']);
         $this->assertEquals($course1->id, $assignment['course']);
-        $this->assertEquals('lightwork assignment', $assignment['name']);
+        $this->assertEquals('English', $assignment['name']);
         $this->assertArrayNotHasKey('intro', $assignment);
         $this->assertArrayNotHasKey('introattachments', $assignment);
         $this->assertEquals(1, $assignment['markingworkflow']);
@@ -287,7 +295,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assignment = $course['assignments'][0];
         $this->assertEquals($assign1->id, $assignment['id']);
         $this->assertEquals($course1->id, $assignment['course']);
-        $this->assertEquals('lightwork assignment', $assignment['name']);
+        $this->assertEquals('English', $assignment['name']);
         $this->assertArrayNotHasKey('intro', $assignment);
         $this->assertArrayNotHasKey('introattachments', $assignment);
         $this->assertEquals(1, $assignment['markingworkflow']);
@@ -434,6 +442,59 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->assertEquals($sid, $submission['id']);
         $this->assertCount(1, $submission['plugins']);
         $this->assertEquals('notgraded', $submission['gradingstatus']);
+
+        // Test locking the context.
+        set_config('contextlocking', 1);
+        $context = context_course::instance($course1->id);
+        $context->set_locked(true);
+
+        $this->setUser($teacher);
+        $assignmentids[] = $assign1->id;
+        $result = mod_assign_external::get_submissions($assignmentids);
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submissions_returns(), $result);
+        $this->assertEquals(1, count($result['assignments']));
+    }
+
+    public function test_get_submissions_group_submission() {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        $result = $this->create_assign_with_student_and_teacher(array(
+            'assignsubmission_onlinetext_enabled' => 1,
+            'teamsubmission' => 1
+        ));
+        $assignmodule = $result['assign'];
+        $student = $result['student'];
+        $teacher = $result['teacher'];
+        $course = $result['course'];
+        $context = context_course::instance($course->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $group = $this->getDataGenerator()->create_group(array('courseid' => $course->id));
+        $cm = get_coursemodule_from_instance('assign', $assignmodule->id);
+        $context = context_module::instance($cm->id);
+        $assign = new mod_assign_testable_assign($context, $cm, $course);
+
+        groups_add_member($group, $student);
+
+        $this->setUser($student);
+        $submission = $assign->get_group_submission($student->id, $group->id, true);
+        $sid = $submission->id;
+
+        $this->setUser($teacher);
+
+        $assignmentids[] = $assignmodule->id;
+        $result = mod_assign_external::get_submissions($assignmentids);
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submissions_returns(), $result);
+
+        $this->assertEquals(1, count($result['assignments']));
+        $assignment = $result['assignments'][0];
+        $this->assertEquals($assignmodule->id, $assignment['assignmentid']);
+        $this->assertEquals(1, count($assignment['submissions']));
+        $submission = $assignment['submissions'][0];
+        $this->assertEquals($sid, $submission['id']);
+        $this->assertEquals($group->id, $submission['groupid']);
+        $this->assertEquals(0, $submission['userid']);
     }
 
     /**
@@ -570,8 +631,6 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
     /**
      * Test lock_submissions
-     *
-     * @expectedException moodle_exception
      */
     public function test_lock_submissions() {
         global $DB, $USER;
@@ -591,27 +650,22 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $student1 = self::getDataGenerator()->create_user();
         $student2 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student2->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id, $studentrole->id);
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
 
         // Create a student1 with an online text submission.
         // Simulate a submission.
         $this->setUser($student1);
         $submission = $assign->get_user_submission($student1->id, true);
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -627,10 +681,12 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->setUser($student2);
         $submission = $assign->get_user_submission($student2->id, true);
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $notices = array();
+        $this->expectException(moodle_exception::class);
         $assign->save_submission($data, $notices);
     }
 
@@ -655,27 +711,22 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $student1 = self::getDataGenerator()->create_user();
         $student2 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student2->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id, $studentrole->id);
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
 
         // Create a student1 with an online text submission.
         // Simulate a submission.
         $this->setUser($student1);
         $submission = $assign->get_user_submission($student1->id, true);
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -697,9 +748,10 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->setUser($student2);
         $submission = $assign->get_user_submission($student2->id, true);
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $notices = array();
         $assign->save_submission($data, $notices);
     }
@@ -728,19 +780,18 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assign = new assign($context, $cm, $course);
 
         $student1 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
 
         // Create a student1 with an online text submission.
         // Simulate a submission.
         $this->setUser($student1);
         $submission = $assign->get_user_submission($student1->id, true);
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid'=>file_get_unused_draft_itemid(),
-                                         'text'=>'Submission text',
-                                         'format'=>FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -772,15 +823,13 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $course = self::getDataGenerator()->create_course();
 
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
         $this->setUser($teacher);
 
         $now = time();
-        $yesterday = $now - 24*60*60;
-        $tomorrow = $now + 24*60*60;
+        $yesterday = $now - 24 * 60 * 60;
+        $tomorrow = $now + 24 * 60 * 60;
         set_config('submissionreceipts', 0, 'assign');
         $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
         $params['course'] = $course->id;
@@ -795,10 +844,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assign = new assign($context, $cm, $course);
 
         $student1 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
 
         $this->setUser($student1);
         $result = mod_assign_external::submit_for_grading($instance->id, true);
@@ -830,13 +877,10 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->setUser($student1);
         $result = mod_assign_external::save_user_extensions($instance->id, array($student1->id), array($now, $tomorrow));
         $result = external_api::clean_returnvalue(mod_assign_external::save_user_extensions_returns(), $result);
-
     }
 
     /**
      * Test reveal_identities
-     *
-     * @expectedException required_capability_exception
      */
     public function test_reveal_identities() {
         global $DB, $USER;
@@ -846,10 +890,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $course = self::getDataGenerator()->create_course();
 
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
         $this->setUser($teacher);
 
         $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
@@ -864,12 +906,11 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assign = new assign($context, $cm, $course);
 
         $student1 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
 
         $this->setUser($student1);
+        $this->expectException(required_capability_exception::class);
         $result = mod_assign_external::reveal_identities($instance->id);
         $result = external_api::clean_returnvalue(mod_assign_external::reveal_identities_returns(), $result);
         $this->assertEquals(1, count($result));
@@ -921,18 +962,12 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $student1 = self::getDataGenerator()->create_user();
         $student2 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student2->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id, $studentrole->id);
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
 
         // Create a student1 with an online text submission.
         // Simulate a submission.
@@ -949,7 +984,6 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         // Check for 0 warnings.
         $this->assertEquals(0, count($result));
-
     }
 
     /**
@@ -963,10 +997,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $course = self::getDataGenerator()->create_course();
 
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
         $this->setUser($teacher);
 
         $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
@@ -974,7 +1006,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $params['assignsubmission_onlinetext_enabled'] = 1;
         $params['assignsubmission_file_enabled'] = 1;
         $params['assignsubmission_file_maxfiles'] = 5;
-        $params['assignsubmission_file_maxsizebytes'] = 1024*1024;
+        $params['assignsubmission_file_maxsizebytes'] = 1024 * 1024;
         $instance = $generator->create_instance($params);
         $cm = get_coursemodule_from_instance('assign', $instance->id);
         $context = context_module::instance($cm->id);
@@ -983,13 +1015,9 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $student1 = self::getDataGenerator()->create_user();
         $student2 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student2->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id, $studentrole->id);
         // Create a student1 with an online text submission.
         // Simulate a submission.
         $this->setUser($student1);
@@ -1027,9 +1055,10 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         // Now try a submission.
         $submissionpluginparams = array();
         $submissionpluginparams['files_filemanager'] = $draftidfile;
-        $onlinetexteditorparams = array('text' => '<p>Yeeha!</p>',
-                                        'format'=>1,
-                                        'itemid'=>$draftidonlinetext);
+        $onlinetexteditorparams = array(
+            'text' => '<p>Yeeha!</p>',
+            'format' => 1,
+            'itemid' => $draftidonlinetext);
         $submissionpluginparams['onlinetext_editor'] = $onlinetexteditorparams;
         $result = mod_assign_external::save_submission($instance->id, $submissionpluginparams);
         $result = external_api::clean_returnvalue(mod_assign_external::save_submission_returns(), $result);
@@ -1059,10 +1088,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $course = self::getDataGenerator()->create_course();
 
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
         $this->setUser($teacher);
 
         $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
@@ -1109,21 +1136,22 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $feedbackeditorparams = array('text' => 'Yeeha!',
                                         'format' => 1);
         $feedbackpluginparams['assignfeedbackcomments_editor'] = $feedbackeditorparams;
-        $result = mod_assign_external::save_grade($instance->id,
-                                                  $student1->id,
-                                                  50.0,
-                                                  -1,
-                                                  true,
-                                                  'released',
-                                                  false,
-                                                  $feedbackpluginparams);
+        $result = mod_assign_external::save_grade(
+            $instance->id,
+            $student1->id,
+            50.0,
+            -1,
+            true,
+            'released',
+            false,
+            $feedbackpluginparams);
         // No warnings.
         $this->assertNull($result);
 
         $result = mod_assign_external::get_grades(array($instance->id));
         $result = external_api::clean_returnvalue(mod_assign_external::get_grades_returns(), $result);
 
-        $this->assertEquals($result['assignments'][0]['grades'][0]['grade'], '50.0');
+        $this->assertEquals((float)$result['assignments'][0]['grades'][0]['grade'], '50.0');
     }
 
     /**
@@ -1138,9 +1166,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $teacher = self::getDataGenerator()->create_user();
         $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
 
         $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
         $params['course'] = $course->id;
@@ -1155,12 +1181,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $student1 = self::getDataGenerator()->create_user();
         $student2 = self::getDataGenerator()->create_user();
         $studentrole = $DB->get_record('role', array('shortname' => 'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student2->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id, $studentrole->id);
 
         $this->setUser($teacher);
 
@@ -1273,19 +1295,17 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
                                          array('userid' => $student1->id, 'assignment' => $instance->id),
                                          '*',
                                          MUST_EXIST);
-        $this->assertEquals($student1grade->grade, '50.0');
+        $this->assertEquals((float)$student1grade->grade, '50.0');
 
         $student2grade = $DB->get_record('assign_grades',
                                          array('userid' => $student2->id, 'assignment' => $instance->id),
                                          '*',
                                          MUST_EXIST);
-        $this->assertEquals($student2grade->grade, '100.0');
+        $this->assertEquals((float)$student2grade->grade, '100.0');
     }
 
     /**
      * Test save grades for a team submission
-     *
-     * @expectedException invalid_parameter_exception
      */
     public function test_save_grades_with_group_submission() {
         global $DB, $USER, $CFG;
@@ -1297,9 +1317,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $teacher = self::getDataGenerator()->create_user();
         $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
 
         $groupingdata = array();
         $groupingdata['courseid'] = $course->id;
@@ -1335,18 +1353,10 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $student3 = self::getDataGenerator()->create_user();
         $student4 = self::getDataGenerator()->create_user();
         $studentrole = $DB->get_record('role', array('shortname' => 'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student2->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student3->id,
-                                              $course->id,
-                                              $studentrole->id);
-        $this->getDataGenerator()->enrol_user($student4->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student2->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student3->id, $course->id, $studentrole->id);
+        $this->getDataGenerator()->enrol_user($student4->id, $course->id, $studentrole->id);
 
         groups_add_member($group1->id, $student1->id);
         groups_add_member($group1->id, $student2->id);
@@ -1379,6 +1389,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $grades1[] = $student2gradeinfo;
 
         // Expect an exception since 2 grades have been submitted for the same team.
+        $this->expectException(invalid_parameter_exception::class);
         $result = mod_assign_external::save_grades($instance->id, true, $grades1);
         $result = external_api::clean_returnvalue(mod_assign_external::save_grades_returns(), $result);
 
@@ -1406,15 +1417,15 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->assertEquals(0, count($result));
 
         $student3grade = $DB->get_record('assign_grades',
-                                         array('userid' => $student3->id, 'assignment' => $instance->id),
-                                         '*',
-                                         MUST_EXIST);
+            array('userid' => $student3->id, 'assignment' => $instance->id),
+            '*',
+            MUST_EXIST);
         $this->assertEquals($student3grade->grade, '50.0');
 
         $student4grade = $DB->get_record('assign_grades',
-                                         array('userid' => $student4->id, 'assignment' => $instance->id),
-                                         '*',
-                                         MUST_EXIST);
+            array('userid' => $student4->id, 'assignment' => $instance->id),
+            '*',
+            MUST_EXIST);
         $this->assertEquals($student4grade->grade, '75.0');
     }
 
@@ -1429,10 +1440,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $course = self::getDataGenerator()->create_course();
 
         $teacher = self::getDataGenerator()->create_user();
-        $teacherrole = $DB->get_record('role', array('shortname'=>'teacher'));
-        $this->getDataGenerator()->enrol_user($teacher->id,
-                                              $course->id,
-                                              $teacherrole->id);
+        $teacherrole = $DB->get_record('role', array('shortname' => 'teacher'));
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, $teacherrole->id);
         $this->setUser($teacher);
 
         $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
@@ -1449,17 +1458,13 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $assign = new assign($context, $cm, $course);
 
         $student1 = self::getDataGenerator()->create_user();
-        $studentrole = $DB->get_record('role', array('shortname'=>'student'));
-        $this->getDataGenerator()->enrol_user($student1->id,
-                                              $course->id,
-                                              $studentrole->id);
+        $studentrole = $DB->get_record('role', array('shortname' => 'student'));
+        $this->getDataGenerator()->enrol_user($student1->id, $course->id, $studentrole->id);
         // Now try a submission.
         $this->setUser($student1);
         $draftidonlinetext = file_get_unused_draft_itemid();
         $submissionpluginparams = array();
-        $onlinetexteditorparams = array('text'=>'Yeeha!',
-                                        'format'=>1,
-                                        'itemid'=>$draftidonlinetext);
+        $onlinetexteditorparams = array('text' => 'Yeeha!', 'format' => 1, 'itemid' => $draftidonlinetext);
         $submissionpluginparams['onlinetext_editor'] = $onlinetexteditorparams;
         $submissionpluginparams['files_filemanager'] = file_get_unused_draft_itemid();
         $result = mod_assign_external::save_submission($instance->id, $submissionpluginparams);
@@ -1470,17 +1475,17 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         // Now try a grade.
         $feedbackpluginparams = array();
         $feedbackpluginparams['files_filemanager'] = file_get_unused_draft_itemid();
-        $feedbackeditorparams = array('text'=>'Yeeha!',
-                                        'format'=>1);
+        $feedbackeditorparams = array('text' => 'Yeeha!', 'format' => 1);
         $feedbackpluginparams['assignfeedbackcomments_editor'] = $feedbackeditorparams;
-        $result = mod_assign_external::save_grade($instance->id,
-                                                  $student1->id,
-                                                  50.0,
-                                                  -1,
-                                                  true,
-                                                  'released',
-                                                  false,
-                                                  $feedbackpluginparams);
+        $result = mod_assign_external::save_grade(
+            $instance->id,
+            $student1->id,
+            50.0,
+            -1,
+            true,
+            'released',
+            false,
+            $feedbackpluginparams);
         $this->assertNull($result);
 
         $this->setUser($student1);
@@ -1589,8 +1594,6 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
     /**
      * Test view_grading_table
-     *
-     * @expectedException dml_missing_record_exception
      */
     public function test_view_grading_table_invalid_instance() {
         global $DB;
@@ -1604,13 +1607,12 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $cm = get_coursemodule_from_instance('assign', $assign->id);
 
         // Test invalid instance id.
+        $this->expectException(dml_missing_record_exception::class);
         mod_assign_external::view_grading_table(0);
     }
 
     /**
      * Test view_grading_table
-     *
-     * @expectedException require_login_exception
      */
     public function test_view_grading_table_not_enrolled() {
         global $DB;
@@ -1627,6 +1629,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $user = self::getDataGenerator()->create_user();
         $this->setUser($user);
 
+        $this->expectException(require_login_exception::class);
         mod_assign_external::view_grading_table($assign->id);
     }
 
@@ -1671,9 +1674,6 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
     /**
      * Test view_grading_table
-     *
-     * @expectedException        require_login_exception
-     * @expectedExceptionMessage Course or activity not accessible. (Activity is hidden)
      */
     public function test_view_grading_table_without_capability() {
         global $DB;
@@ -1699,6 +1699,8 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         accesslib_clear_all_caches_for_unit_testing();
         course_modinfo::clear_instance_cache();
 
+        $this->expectException(require_login_exception::class);
+        $this->expectExceptionMessage('Course or activity not accessible. (Activity is hidden)');
         mod_assign_external::view_grading_table($assign->id);
     }
 
@@ -1871,9 +1873,10 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $submission = $assign->get_user_submission($student1->id, true);
 
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid' => file_get_unused_draft_itemid(),
-                                         'text' => 'Submission text with a <a href="@@PLUGINFILE@@/intro.txt">link</a>',
-                                         'format' => FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text with a <a href="@@PLUGINFILE@@/intro.txt">link</a>',
+            'format' => FORMAT_MOODLE);
 
         $draftidfile = file_get_unused_draft_itemid();
         $usercontext = context_user::instance($student1->id);
@@ -2018,7 +2021,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->assertEquals(0, $result['gradingsummary']['submissiondraftscount']);
         $this->assertEquals(1, $result['gradingsummary']['submissionssubmittedcount']);  // One student from G1 submitted.
         $this->assertEquals(1, $result['gradingsummary']['submissionsneedgradingcount']);    // One student from G1 submitted.
-        $this->assertFalse($result['gradingsummary']['warnofungroupedusers']);
+        $this->assertEmpty($result['gradingsummary']['warnofungroupedusers']);
 
         // Second group.
         $result = mod_assign_external::get_submission_status($assign->get_instance()->id, 0, $g2->id);
@@ -2067,14 +2070,15 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $feedbackeditorparams = array('text' => 'Yeeha!',
                                         'format' => 1);
         $feedbackpluginparams['assignfeedbackcomments_editor'] = $feedbackeditorparams;
-        $result = mod_assign_external::save_grade($instance->id,
-                                                  $student1->id,
-                                                  50.0,
-                                                  -1,
-                                                  false,
-                                                  'released',
-                                                  false,
-                                                  $feedbackpluginparams);
+        $result = mod_assign_external::save_grade(
+            $instance->id,
+            $student1->id,
+            50.0,
+            -1,
+            false,
+            'released',
+            false,
+            $feedbackpluginparams);
         $USER->ignoresesskey = true;
         $assign->testable_process_add_attempt($student1->id);
 
@@ -2144,8 +2148,6 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
     /**
      * Test access control for get_submission_status.
-     *
-     * @expectedException required_capability_exception
      */
     public function test_get_submission_status_access_control() {
         $this->resetAfterTest(true);
@@ -2155,25 +2157,140 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->setUser($student2);
 
         // Access control test.
+        $this->expectException(required_capability_exception::class);
         mod_assign_external::get_submission_status($assign->get_instance()->id, $student1->id);
 
     }
 
     /**
+     * Test hidden grader for get_submission_status.
+     */
+    public function test_get_submission_status_hidden_grader() {
+        $this->resetAfterTest(true);
+
+        list($assign, $instance, $student1, $student2, $teacher, $g1, $g2) = $this->create_submission_for_testing_status(true);
+
+        // Grade the assign for the student1.
+        $this->setUser($teacher);
+
+        $data = new stdClass();
+        $data->grade = '50.0';
+        $data->assignfeedbackcomments_editor = ['text' => ''];
+        $assign->testable_apply_grade_to_user($data, $student1->id, 0);
+
+        $this->setUser($student1);
+
+        // Check that the student can see the grader by default.
+        $result = mod_assign_external::get_submission_status($assign->get_instance()->id);
+        // We expect debugging because of the $PAGE object, this won't happen in a normal WS request.
+        $this->assertDebuggingCalled();
+
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submission_status_returns(), $result);
+
+        $this->assertTrue(isset($result['feedback']));
+        $this->assertTrue(isset($result['feedback']['grade']));
+        $this->assertEquals($teacher->id, $result['feedback']['grade']['grader']);
+
+        // Now change the setting so the grader is hidden.
+        $this->setAdminUser();
+
+        $instance = $assign->get_instance();
+        $instance->instance = $instance->id;
+        $instance->hidegrader = true;
+        $assign->update_instance($instance);
+
+        $this->setUser($student1);
+
+        // Check that the student cannot see the grader anymore.
+        $result = mod_assign_external::get_submission_status($assign->get_instance()->id);
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submission_status_returns(), $result);
+
+        $this->assertTrue(isset($result['feedback']));
+        $this->assertTrue(isset($result['feedback']['grade']));
+        $this->assertEquals(-1, $result['feedback']['grade']['grader']);
+
+        // Check that the teacher can see the grader.
+        $this->setUser($teacher);
+
+        $result = mod_assign_external::get_submission_status($assign->get_instance()->id, $student1->id);
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submission_status_returns(), $result);
+
+        $this->assertTrue(isset($result['feedback']));
+        $this->assertTrue(isset($result['feedback']['grade']));
+        $this->assertEquals($teacher->id, $result['feedback']['grade']['grader']);
+    }
+
+    /**
+     * Test get_submission_status with override for student.
+     */
+    public function test_get_submission_status_with_override() {
+        global $DB;
+
+        $this->resetAfterTest(true);
+
+        list($assign, $instance, $student1, $student2, $teacher, $g1, $g2) = $this->create_submission_for_testing_status();
+
+        $overridedata = new \stdClass();
+        $overridedata->assignid = $assign->get_instance()->id;
+        $overridedata->userid = $student1->id;
+        $overridedata->allowsubmissionsfromdate = time() + YEARSECS;
+        $DB->insert_record('assign_overrides', $overridedata);
+
+        $result = mod_assign_external::get_submission_status($assign->get_instance()->id);
+        // We expect debugging because of the $PAGE object, this won't happen in a normal WS request.
+        $this->assertDebuggingCalled();
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submission_status_returns(), $result);
+
+        $this->assertCount(0, $result['warnings']);
+        $this->assertFalse(isset($result['gradingsummary']));
+        $this->assertFalse(isset($result['feedback']));
+        $this->assertFalse(isset($result['previousattempts']));
+
+        $this->assertTrue($result['lastattempt']['submissionsenabled']);
+        $this->assertFalse($result['lastattempt']['canedit']);  // False because of override.
+        $this->assertFalse($result['lastattempt']['cansubmit']);
+        $this->assertFalse($result['lastattempt']['locked']);
+        $this->assertFalse($result['lastattempt']['graded']);
+        $this->assertEmpty($result['lastattempt']['extensionduedate']);
+        $this->assertFalse($result['lastattempt']['blindmarking']);
+        $this->assertCount(0, $result['lastattempt']['submissiongroupmemberswhoneedtosubmit']);
+        $this->assertEquals('notgraded', $result['lastattempt']['gradingstatus']);
+
+        // Same assignment but user without override.
+        $this->setUser($student2);
+
+        $result = mod_assign_external::get_submission_status($assign->get_instance()->id);
+        $result = external_api::clean_returnvalue(mod_assign_external::get_submission_status_returns(), $result);
+
+        // The submission is now in draft mode.
+        $this->assertCount(0, $result['warnings']);
+        $this->assertFalse(isset($result['gradingsummary']));
+        $this->assertFalse(isset($result['feedback']));
+        $this->assertFalse(isset($result['previousattempts']));
+
+        $this->assertTrue($result['lastattempt']['submissionsenabled']);
+        $this->assertTrue($result['lastattempt']['canedit']);  // True because there is not override for this user.
+        $this->assertFalse($result['lastattempt']['cansubmit']);
+        $this->assertFalse($result['lastattempt']['locked']);
+        $this->assertFalse($result['lastattempt']['graded']);
+        $this->assertEmpty($result['lastattempt']['extensionduedate']);
+        $this->assertFalse($result['lastattempt']['blindmarking']);
+        $this->assertCount(0, $result['lastattempt']['submissiongroupmemberswhoneedtosubmit']);
+        $this->assertEquals('notgraded', $result['lastattempt']['gradingstatus']);
+    }
+
+    /**
      * get_participant should throw an excaption if the requested assignment doesn't exist.
-     *
-     * @expectedException moodle_exception
      */
     public function test_get_participant_no_assignment() {
         $this->resetAfterTest(true);
+        $this->expectException(moodle_exception::class);
         mod_assign_external::get_participant('-1', '-1', false);
     }
 
     /**
      * get_participant should throw a require_login_exception if the user doesn't have access
      * to view assignments.
-     *
-     * @expectedException require_login_exception
      */
     public function test_get_participant_no_view_capability() {
         global $DB;
@@ -2189,14 +2306,13 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->setUser($student);
         assign_capability('mod/assign:view', CAP_PROHIBIT, $studentrole->id, $context->id, true);
 
+        $this->expectException(require_login_exception::class);
         mod_assign_external::get_participant($assign->id, $student->id, false);
     }
 
     /**
      * get_participant should throw a required_capability_exception if the user doesn't have access
      * to view assignment grades.
-     *
-     * @expectedException required_capability_exception
      */
     public function test_get_participant_no_grade_capability() {
         global $DB;
@@ -2215,13 +2331,12 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         assign_capability('mod/assign:grade', CAP_PROHIBIT, $teacherrole->id, $context->id, true);
         accesslib_clear_all_caches_for_unit_testing();
 
+        $this->expectException(required_capability_exception::class);
         mod_assign_external::get_participant($assign->id, $student->id, false);
     }
 
     /**
      * get_participant should throw an exception if the user isn't enrolled in the course.
-     *
-     * @expectedException moodle_exception
      */
     public function test_get_participant_no_participant() {
         global $DB;
@@ -2234,6 +2349,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
 
         $this->setUser($teacher);
 
+        $this->expectException(moodle_exception::class);
         $result = mod_assign_external::get_participant($assign->id, $student->id, false);
         $result = external_api::clean_returnvalue(mod_assign_external::get_participant_returns(), $result);
     }
@@ -2382,9 +2498,10 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $submission->status = ASSIGN_SUBMISSION_STATUS_SUBMITTED;
         $assign->testable_update_submission($submission, $student->id, true, false);
         $data = new stdClass();
-        $data->onlinetext_editor = array('itemid' => file_get_unused_draft_itemid(),
-                                         'text' => 'Submission text',
-                                         'format' => FORMAT_MOODLE);
+        $data->onlinetext_editor = array(
+            'itemid' => file_get_unused_draft_itemid(),
+            'text' => 'Submission text',
+            'format' => FORMAT_MOODLE);
         $plugin = $assign->get_submission_plugin_by_type('onlinetext');
         $plugin->save($submission, $data);
 
@@ -2396,6 +2513,66 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->assertEquals($student->id, $result['id']);
         $this->assertEquals($group->id, $result['groupid']);
         $this->assertEquals($group->name, $result['groupname']);
+    }
+
+    /**
+     * Test get_participant() when relative dates mode is enabled on the course.
+     *
+     * @dataProvider get_participant_relative_dates_provider
+     * @param array $courseconfig the config to use when creating the course.
+     * @param array $assignconfig the config to use when creating the assignment.
+     * @param array $enrolconfig the enrolement to create.
+     * @param array $expectedproperties array of expected assign properties.
+     */
+    public function test_get_participant_relative_dates(array $courseconfig, array $assignconfig, array $enrolconfig,
+            array $expectedproperties) {
+        $this->resetAfterTest();
+
+        set_config('enablecourserelativedates', true); // Enable relative dates at site level.
+
+        $course = $this->getDataGenerator()->create_course($courseconfig);
+        $generator = $this->getDataGenerator()->get_plugin_generator('mod_assign');
+        $assignconfig['course'] = $course->id;
+        $instance = $generator->create_instance($assignconfig);
+        $cm = get_coursemodule_from_instance('assign', $instance->id);
+        $context = context_module::instance($cm->id);
+        $assign = new assign($context, $cm, $course);
+
+        $user = $this->getDataGenerator()->create_and_enrol($course, ...array_values($enrolconfig));
+
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'teacher', null, 'manual', time() - 50 * DAYSECS);
+
+        $this->setUser($teacher);
+        $result = mod_assign_external::get_participant($assign->get_instance()->id, $user->id, false);
+        $result = external_api::clean_returnvalue(mod_assign_external::get_participant_returns(), $result);
+
+        foreach ($expectedproperties as $propertyname => $propertyval) {
+            $this->assertEquals($propertyval, $result[$propertyname]);
+        }
+    }
+
+    /**
+     * The test_get_participant_relative_dates data provider.
+     */
+    public function get_participant_relative_dates_provider() {
+        $timenow = time();
+
+        return [
+            'Student whose enrolment starts after the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'student', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 8 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 6 * DAYSECS]
+            ],
+            'Student whose enrolment starts before the course start date, relative dates mode enabled' => [
+                'courseconfig' => ['relativedatesmode' => true, 'startdate' => $timenow - 10 * DAYSECS],
+                'assignconfig' => ['duedate' => $timenow + 4 * DAYSECS],
+                'enrolconfig' => ['shortname' => 'student', 'userparams' => null, 'method' => 'manual',
+                    'startdate' => $timenow - 12 * DAYSECS],
+                'expectedproperties' => ['duedate' => $timenow + 4 * DAYSECS]
+            ],
+        ];
     }
 
     /**
@@ -2425,7 +2602,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $DB->update_record('user', $student);
 
         $this->setUser($teacher);
-        $participants = mod_assign_external::list_participants($assignment->id, 0, '', 0, 0, false, true);
+        $participants = mod_assign_external::list_participants($assignment->id, 0, '', 0, 0, false, true, true);
         $participants = external_api::clean_returnvalue(mod_assign_external::list_participants_returns(), $participants);
         $this->assertCount(1, $participants);
 
@@ -2443,7 +2620,7 @@ class mod_assign_external_testcase extends externallib_advanced_testcase {
         $this->assertEquals($student->institution, $participant['institution']);
         $this->assertArrayHasKey('enrolledcourses', $participant);
 
-        $participants = mod_assign_external::list_participants($assignment->id, 0, '', 0, 0, false, false);
+        $participants = mod_assign_external::list_participants($assignment->id, 0, '', 0, 0, false, false, true);
         $participants = external_api::clean_returnvalue(mod_assign_external::list_participants_returns(), $participants);
         // Check that the list of courses the participant is enrolled is not returned.
         $participant = $participants[0];

@@ -164,15 +164,6 @@ function label_reset_userdata($data) {
 }
 
 /**
- * Returns all other caps used in module
- *
- * @return array
- */
-function label_get_extra_capabilities() {
-    return array('moodle/site:accessallgroups');
-}
-
-/**
  * @uses FEATURE_IDNUMBER
  * @uses FEATURE_GROUPS
  * @uses FEATURE_GROUPINGS
@@ -332,6 +323,7 @@ function label_generate_resized_image(stored_file $file, $maxwidth, $maxheight) 
         $attrib['width'] = $maxwidth;
     }
 
+    $attrib['class'] = "img-fluid";
     $img = html_writer::empty_tag('img', $attrib);
     if ($link) {
         return html_writer::link($link, $img);

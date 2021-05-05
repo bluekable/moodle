@@ -22,7 +22,7 @@ Feature: Attempt a quiz
       | quiz       | Quiz 1 | Quiz 1 description | C1     | quiz1    |
 
   @javascript
-  Scenario: Attempt a quiz with a single unnamed section
+  Scenario: Attempt a quiz with a single unnamed section, review and re-attempt
     Given the following "questions" exist:
       | questioncategory | qtype       | name  | questiontext    |
       | Test questions   | truefalse   | TF1   | First question  |
@@ -35,11 +35,17 @@ Feature: Attempt a quiz
       | slot | response |
       |   1  | True     |
       |   2  | False    |
-    When I log in as "student"
-    And I am on "Course 1" course homepage
-    And I follow "Quiz 1"
+    When I am on the "Quiz 1" "mod_quiz > View" page logged in as "student"
     And I follow "Review"
-    Then I should see "25.00 out of 100.00"
+    Then I should see "Started on"
+    And I should see "State"
+    And I should see "Completed on"
+    And I should see "Time taken"
+    And I should see "Marks"
+    And I should see "Grade"
+    And I should see "25.00 out of 100.00"
+    And I follow "Finish review"
+    And I press "Re-attempt quiz"
 
   @javascript
   Scenario: Attempt a quiz with mulitple sections
@@ -61,14 +67,12 @@ Feature: Attempt a quiz
       | TF6      | 4    |
     And quiz "Quiz 1" contains the following sections:
       | heading   | firstslot | shuffle |
-      | Section 1 | 1         | 1       |
+      | Section 1 | 1         | 0       |
       | Section 2 | 3         | 0       |
       |           | 4         | 1       |
-      | Section 3 | 5         | 0       |
+      | Section 3 | 5         | 1       |
 
-    When I log in as "student"
-    And I am on "Course 1" course homepage
-    And I follow "Quiz 1"
+    When I am on the "Quiz 1" "mod_quiz > View" page logged in as "student"
     And I press "Attempt quiz now"
 
     Then I should see "Section 1" in the "Quiz navigation" "block"
@@ -99,6 +103,16 @@ Feature: Attempt a quiz
     And I should see question "5" in section "Section 3" in the quiz navigation
     And I should see question "6" in section "Section 3" in the quiz navigation
 
+    And I follow "Show one page at a time"
+    And I should see "First question"
+    And I should not see "Third question"
+    And I should see "Next page"
+
+    And I follow "Show all questions on one page"
+    And I should see "Fourth question"
+    And I should see "Sixth question"
+    And I should not see "Next page"
+
   @javascript
   Scenario: Next and previous navigation
     Given the following "questions" exist:
@@ -109,9 +123,7 @@ Feature: Attempt a quiz
       | question | page |
       | TF1      | 1    |
       | TF2      | 2    |
-    When I log in as "student"
-    And I am on "Course 1" course homepage
-    And I follow "Quiz 1"
+    When I am on the "Quiz 1" "mod_quiz > View" page logged in as "student"
     And I press "Attempt quiz now"
     Then I should see "Text of the first question"
     And I should not see "Text of the second question"

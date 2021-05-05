@@ -36,7 +36,7 @@ class media_html5audio_testcase extends advanced_testcase {
     /**
      * Pre-test setup. Preserves $CFG.
      */
-    public function setUp() {
+    public function setUp(): void {
         parent::setUp();
 
         // Reset $CFG and $SERVER.
@@ -60,7 +60,7 @@ class media_html5audio_testcase extends advanced_testcase {
     /**
      * Test method get_supported_extensions()
      */
-    public function test_supported_extensions() {
+    public function test_get_supported_extensions() {
         global $CFG;
         require_once($CFG->libdir . '/filelib.php');
 
@@ -70,6 +70,25 @@ class media_html5audio_testcase extends advanced_testcase {
         $player = new media_html5audio_plugin();
         $this->assertEmpty(array_diff($player->get_supported_extensions(), $nativeextensions));
         $this->assertEmpty(array_diff($nativeextensions, $player->get_supported_extensions()));
+    }
+
+    /**
+     * Test method list_supported_urls()
+     */
+    public function test_list_supported_urls() {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
+
+        $nativeextensions = file_get_typegroup('extension', 'html_audio');
+
+        // Create list of URLs for each extension.
+        $urls = array_map(function($ext){
+            return new moodle_url('http://example.org/audio.' . $ext);
+        }, $nativeextensions);
+
+        // Make sure that the list of supported URLs is not filtering permitted extensions.
+        $player = new media_html5audio_plugin();
+        $this->assertCount(count($urls), $player->list_supported_urls($urls));
     }
 
     /**
@@ -89,16 +108,16 @@ class media_html5audio_testcase extends advanced_testcase {
         $this->assertTrue($manager->can_embed_url($url, $embedoptions));
         $content = $manager->embed_url($url, 'Test & file', 0, 0, $embedoptions);
 
-        $this->assertRegExp('~mediaplugin_html5audio~', $content);
-        $this->assertRegExp('~</audio>~', $content);
-        $this->assertRegExp('~title="Test &amp; file"~', $content);
+        $this->assertMatchesRegularExpression('~mediaplugin_html5audio~', $content);
+        $this->assertMatchesRegularExpression('~</audio>~', $content);
+        $this->assertMatchesRegularExpression('~title="Test &amp; file"~', $content);
         // Do not set default width/height (it's an audio after all).
-        $this->assertNotRegExp('~width=~', $content);
-        $this->assertNotRegExp('~height=~', $content);
+        $this->assertDoesNotMatchRegularExpression('~width=~', $content);
+        $this->assertDoesNotMatchRegularExpression('~height=~', $content);
 
         // This plugin ignores size settings.
-        $this->assertNotRegExp('~width=~', $content);
-        $this->assertNotRegExp('~height=~', $content);
+        $this->assertDoesNotMatchRegularExpression('~width=~', $content);
+        $this->assertDoesNotMatchRegularExpression('~height=~', $content);
     }
 
     /**
@@ -111,10 +130,10 @@ class media_html5audio_testcase extends advanced_testcase {
         $text = html_writer::link($url, 'Watch this one');
         $content = format_text($text, FORMAT_HTML);
 
-        $this->assertRegExp('~mediaplugin_html5audio~', $content);
-        $this->assertRegExp('~</audio>~', $content);
-        $this->assertRegExp('~title="Watch this one"~', $content);
-        $this->assertNotRegExp('~<track\b~i', $content);
+        $this->assertMatchesRegularExpression('~mediaplugin_html5audio~', $content);
+        $this->assertMatchesRegularExpression('~</audio>~', $content);
+        $this->assertMatchesRegularExpression('~title="Watch this one"~', $content);
+        $this->assertDoesNotMatchRegularExpression('~<track\b~i', $content);
     }
 
     /**
@@ -127,7 +146,7 @@ class media_html5audio_testcase extends advanced_testcase {
             '<track src="'.$trackurl.'">Unsupported text</audio>';
         $content = format_text($text, FORMAT_HTML);
 
-        $this->assertNotRegExp('~mediaplugin_html5audio~', $content);
+        $this->assertDoesNotMatchRegularExpression('~mediaplugin_html5audio~', $content);
         $this->assertEquals(clean_text($text, FORMAT_HTML), $content);
     }
 }

@@ -125,7 +125,8 @@ abstract class quiz_attempts_report extends quiz_default_report {
             return array($currentgroup, $empty, $empty, $empty);
         }
 
-        $studentsjoins = get_enrolled_with_capabilities_join($this->context);
+        $studentsjoins = get_enrolled_with_capabilities_join($this->context, '',
+                array('mod/quiz:attempt', 'mod/quiz:reviewmyattempts'));
 
         if (empty($currentgroup)) {
             return array($currentgroup, $studentsjoins, $empty, $studentsjoins);
@@ -202,10 +203,11 @@ abstract class quiz_attempts_report extends quiz_default_report {
             $headers[] = get_string('firstname');
         }
 
-        $extrafields = get_extra_user_fields($this->context);
+        // TODO Does not support custom user profile fields (MDL-70456).
+        $extrafields = \core_user\fields::get_identity_fields($this->context, false);
         foreach ($extrafields as $field) {
             $columns[] = $field;
-            $headers[] = get_user_field_name($field);
+            $headers[] = \core_user\fields::get_display_name($field);
         }
     }
 
@@ -216,7 +218,8 @@ abstract class quiz_attempts_report extends quiz_default_report {
     protected function configure_user_columns($table) {
         $table->column_suppress('picture');
         $table->column_suppress('fullname');
-        $extrafields = get_extra_user_fields($this->context);
+        // TODO Does not support custom user profile fields (MDL-70456).
+        $extrafields = \core_user\fields::get_identity_fields($this->context, false);
         foreach ($extrafields as $field) {
             $table->column_suppress($field);
         }
@@ -351,7 +354,7 @@ abstract class quiz_attempts_report extends quiz_default_report {
                          WHERE {$allowedjoins->wheres} AND quiza.id = :attemptid";
             }
             $params = $allowedjoins->params + array('attemptid' => $attemptid);
-            $attempt = $DB->get_record_sql($sql, $params);
+            $attempt = $DB->get_record_sql($sql, $params, IGNORE_MULTIPLE);
             if (!$attempt || $attempt->quiz != $quiz->id || $attempt->preview != 0) {
                 // Ensure the attempt exists, belongs to this quiz and belongs to
                 // a student included in the report. If not skip.

@@ -34,7 +34,7 @@ class core_user_testcase extends advanced_testcase {
     /**
      * Setup test data.
      */
-    protected function setUp() {
+    protected function setUp(): void {
         $this->resetAfterTest(true);
     }
 
@@ -497,14 +497,14 @@ class core_user_testcase extends advanced_testcase {
         try {
             core_user::get_property_definition('fullname');
         } catch (coding_exception $e) {
-            $this->assertRegExp('/Invalid property requested./', $e->getMessage());
+            $this->assertMatchesRegularExpression('/Invalid property requested./', $e->getMessage());
         }
 
         // Empty parameter.
         try {
             core_user::get_property_definition('');
         } catch (coding_exception $e) {
-            $this->assertRegExp('/Invalid property requested./', $e->getMessage());
+            $this->assertMatchesRegularExpression('/Invalid property requested./', $e->getMessage());
         }
     }
 
@@ -658,8 +658,8 @@ class core_user_testcase extends advanced_testcase {
 
         // Test against theme property choices.
         $choices = core_user::get_property_choices('theme');
-        $this->assertArrayHasKey('bootstrapbase', $choices);
-        $this->assertArrayHasKey('clean', $choices);
+        $this->assertArrayHasKey('boost', $choices);
+        $this->assertArrayHasKey('classic', $choices);
         $this->assertArrayNotHasKey('unknowntheme', $choices);
         $this->assertArrayNotHasKey('wrongtheme', $choices);
 
@@ -675,10 +675,6 @@ class core_user_testcase extends advanced_testcase {
 
     /**
      * Test get_property_default().
-     *
-     *
-     * @expectedException        coding_exception
-     * @expectedExceptionMessage Invalid property requested, or the property does not has a default value.
      */
     public function test_get_property_default() {
         global $CFG;
@@ -706,6 +702,8 @@ class core_user_testcase extends advanced_testcase {
         $timezone = core_user::get_property_default('timezone');
         $this->assertEquals('Pacific/Auckland', $timezone);
 
+        $this->expectException(coding_exception::class);
+        $this->expectExceptionMessage('Invalid property requested, or the property does not has a default value.');
         core_user::get_property_default('firstname');
     }
 
@@ -730,6 +728,46 @@ class core_user_testcase extends advanced_testcase {
         $xxuser = \core_user::get_noreply_user();
 
         $this->assertNotEquals($enuser, $xxuser);
+    }
+
+    /**
+     * Test is_real_user method.
+     */
+    public function test_is_real_user() {
+        global $CFG, $USER;
+
+        // Real users are real users.
+        $auser = $this->getDataGenerator()->create_user();
+        $guest = guest_user();
+        $this->assertTrue(\core_user::is_real_user($auser->id));
+        $this->assertTrue(\core_user::is_real_user($auser->id, true));
+        $this->assertTrue(\core_user::is_real_user($guest->id));
+        $this->assertTrue(\core_user::is_real_user($guest->id, true));
+
+        // Non-logged in users are not real users.
+        $this->assertSame(0, $USER->id, 'The non-logged in user should have an ID of 0.');
+        $this->assertFalse(\core_user::is_real_user($USER->id));
+        $this->assertFalse(\core_user::is_real_user($USER->id, true));
+
+        // Other types of logged in users are real users.
+        $this->setAdminUser();
+        $this->assertTrue(\core_user::is_real_user($USER->id));
+        $this->assertTrue(\core_user::is_real_user($USER->id, true));
+        $this->setGuestUser();
+        $this->assertTrue(\core_user::is_real_user($USER->id));
+        $this->assertTrue(\core_user::is_real_user($USER->id, true));
+        $this->setUser($auser);
+        $this->assertTrue(\core_user::is_real_user($USER->id));
+        $this->assertTrue(\core_user::is_real_user($USER->id, true));
+
+        // Fake accounts are not real users.
+        $CFG->noreplyuserid = null;
+        $this->assertFalse(\core_user::is_real_user(core_user::get_noreply_user()->id));
+        $this->assertFalse(\core_user::is_real_user(core_user::get_noreply_user()->id, true));
+        $CFG->supportuserid = null;
+        $CFG->supportemail = 'test@example.com';
+        $this->assertFalse(\core_user::is_real_user(core_user::get_support_user()->id));
+        $this->assertFalse(\core_user::is_real_user(core_user::get_support_user()->id, true));
     }
 
 }

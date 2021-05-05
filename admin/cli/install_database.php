@@ -56,6 +56,7 @@ Options:
 --agree-license       Indicates agreement with software license.
 --fullname=STRING     Name of the site
 --shortname=STRING    Name of the site
+--summary=STRING      The summary to be displayed on the front page
 -h, --help            Print out this help
 
 Example:
@@ -82,11 +83,6 @@ require_once($CFG->libdir.'/installlib.php');
 require_once($CFG->libdir.'/adminlib.php');
 require_once($CFG->libdir.'/componentlib.class.php');
 
-// make sure no tables are installed yet
-if ($DB->get_tables() ) {
-    cli_error(get_string('clitablesexist', 'install'));
-}
-
 $CFG->early_install_lang = true;
 get_string_manager(true);
 
@@ -101,6 +97,7 @@ list($options, $unrecognized) = cli_get_params(
         'adminemail'        => '',
         'fullname'          => '',
         'shortname'         => '',
+        'summary'           => '',
         'agree-license'     => false,
         'help'              => false
     ),
@@ -109,10 +106,20 @@ list($options, $unrecognized) = cli_get_params(
     )
 );
 
+if ($unrecognized) {
+    $unrecognized = implode("\n  ", $unrecognized);
+    cli_error(get_string('cliunknowoption', 'admin', $unrecognized));
+}
 
+// We show help text even if tables are installed.
 if ($options['help']) {
     echo $help;
     die;
+}
+
+// Make sure no tables are installed yet.
+if ($DB->get_tables() ) {
+    cli_error(get_string('clitablesexist', 'install'));
 }
 
 if (!$options['agree-license']) {

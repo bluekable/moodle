@@ -62,7 +62,8 @@ $presets = data_get_available_presets($context);
 $strdelete = get_string('deleted', 'data');
 foreach ($presets as &$preset) {
     if (!empty($preset->userid)) {
-        $namefields = get_all_user_name_fields(true);
+        $userfieldsapi = \core_user\fields::for_name();
+        $namefields = $userfieldsapi->get_sql('', false, '', '', false)->selects;
         $presetuser = $DB->get_record('user', array('id' => $preset->userid), 'id, ' . $namefields, MUST_EXIST);
         $preset->description = $preset->name.' ('.fullname($presetuser, true).')';
     } else {
@@ -100,6 +101,12 @@ $form_save->set_data(array('d' => $data->id, 'name'=>$data->name));
 if (!$form_export->is_submitted()) {
     echo $OUTPUT->header();
     echo $OUTPUT->heading(format_string($data->name), 2);
+
+    // Render the activity information.
+    $cminfo = cm_info::create($cm);
+    $completiondetails = \core_completion\cm_completion_details::get_instance($cminfo, $USER->id);
+    $activitydates = \core\activity_dates::get_dates_for_module($cminfo, $USER->id);
+    echo $OUTPUT->activity_information($cminfo, $completiondetails, $activitydates);
 
     // Needed for tabs.php
     $currenttab = 'presets';
@@ -140,6 +147,10 @@ if (optional_param('sesskey', false, PARAM_BOOL) && confirm_sesskey()) {
         header('Expires: 0');
         header('Cache-Control: must-revalidate,post-check=0,pre-check=0');
         header('Pragma: public');
+
+        // If this file was requested from a form, then mark download as complete.
+        \core_form\util::form_download_complete();
+
         $exportfilehandler = fopen($exportfile, 'rb');
         print fread($exportfilehandler, filesize($exportfile));
         fclose($exportfilehandler);

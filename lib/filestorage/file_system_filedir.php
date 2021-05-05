@@ -119,7 +119,7 @@ class file_system_filedir extends file_system {
      * @param bool $fetchifnotfound Whether to attempt to fetch from the remote path if not found.
      * @return string The full path to the content file
      */
-    protected function get_local_path_from_storedfile(stored_file $file, $fetchifnotfound = false) {
+    public function get_local_path_from_storedfile(stored_file $file, $fetchifnotfound = false) {
         $filepath = $this->get_local_path_from_hash($file->get_contenthash(), $fetchifnotfound);
 
         // Try content recovery.
@@ -136,7 +136,7 @@ class file_system_filedir extends file_system {
      * @param stored_file $file The file to serve.
      * @return string full path to pool file with file content
      */
-    protected function get_remote_path_from_storedfile(stored_file $file) {
+    public function get_remote_path_from_storedfile(stored_file $file) {
         return $this->get_local_path_from_storedfile($file, false);
     }
 
@@ -378,7 +378,9 @@ class file_system_filedir extends file_system {
         // Let's try to prevent some race conditions.
 
         $prev = ignore_user_abort(true);
-        @unlink($hashfile.'.tmp');
+        if (file_exists($hashfile.'.tmp')) {
+            @unlink($hashfile.'.tmp');
+        }
         if (!copy($pathname, $hashfile.'.tmp')) {
             // Borked permissions or out of disk space.
             @unlink($hashfile.'.tmp');
@@ -393,7 +395,10 @@ class file_system_filedir extends file_system {
         }
         rename($hashfile.'.tmp', $hashfile);
         chmod($hashfile, $this->filepermissions); // Fix permissions if needed.
-        @unlink($hashfile.'.tmp'); // Just in case anything fails in a weird way.
+        if (file_exists($hashfile.'.tmp')) {
+            // Just in case anything fails in a weird way.
+            @unlink($hashfile.'.tmp');
+        }
         ignore_user_abort($prev);
 
         return array($contenthash, $filesize, $newfile);
@@ -467,7 +472,10 @@ class file_system_filedir extends file_system {
         }
         rename($hashfile.'.tmp', $hashfile);
         chmod($hashfile, $this->filepermissions); // Fix permissions if needed.
-        @unlink($hashfile.'.tmp'); // Just in case anything fails in a weird way.
+        if (file_exists($hashfile.'.tmp')) {
+            // Just in case anything fails in a weird way.
+            @unlink($hashfile.'.tmp');
+        }
         ignore_user_abort($prev);
 
         return array($contenthash, $filesize, $newfile);

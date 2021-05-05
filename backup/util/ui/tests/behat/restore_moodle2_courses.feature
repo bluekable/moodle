@@ -20,7 +20,7 @@ Feature: Restore Moodle 2 course backups
     And I add a "Forum" to section "1" and I fill the form with:
       | Forum name | Test forum name |
       | Description | Test forum description |
-    And I add the "Community finder" block
+    And I add the "Activities" block
 
   @javascript
   Scenario: Restore a course in another existing course
@@ -28,7 +28,7 @@ Feature: Restore Moodle 2 course backups
       | Confirmation | Filename | test_backup.mbz |
     And I restore "test_backup.mbz" backup into "Course 2" course using this options:
     Then I should see "Course 2"
-    And I should see "Community finder" in the "Community finder" "block"
+    And I should see "Activities" in the "Activities" "block"
     And I should see "Test forum name"
 
   @javascript
@@ -38,7 +38,7 @@ Feature: Restore Moodle 2 course backups
     And I restore "test_backup.mbz" backup into a new course using this options:
       | Schema | Course name | Course 1 restored in a new course |
     Then I should see "Course 1 restored in a new course"
-    And I should see "Community finder" in the "Community finder" "block"
+    And I should see "Activities" in the "Activities" "block"
     And I should see "Test forum name"
     And I should see "Topic 15"
     And I should not see "Topic 16"
@@ -72,7 +72,7 @@ Feature: Restore Moodle 2 course backups
     Then I should see "Course 1"
     And I should not see "Section 3"
     And I should not see "Test forum post backup name"
-    And I should see "Community finder" in the "Community finder" "block"
+    And I should see "Activities" in the "Activities" "block"
     And I should see "Test forum name"
 
   @javascript
@@ -244,3 +244,29 @@ Feature: Restore Moodle 2 course backups
     And I should not see "Topic 16"
     And I should see "Test URL name" in the "Topic 3" "section"
     And I should see "Test forum name" in the "Topic 1" "section"
+
+  @javascript
+  Scenario: Restore a backup with override permission
+    Given the following "permission overrides" exist:
+      | capability         | permission | role           | contextlevel | reference |
+      | enrol/manual:enrol | Allow      | teacher        | Course       | C1        |
+    And I backup "Course 1" course using this options:
+      | Confirmation | Filename | test_backup.mbz |
+    When I restore "test_backup.mbz" backup into a new course using this options:
+      | Settings | Include override permissions | 1 |
+    Then I navigate to "Users > Permissions" in current page administration
+    And I should see "Non-editing teacher (1)"
+    And I set the field "Advanced role override" to "Non-editing teacher (1)"
+    And "enrol/manual:enrol" capability has "Allow" permission
+
+  @javascript
+  Scenario: Restore a backup without override permission
+    Given the following "permission overrides" exist:
+      | capability         | permission | role           | contextlevel | reference |
+      | enrol/manual:enrol | Allow      | teacher        | Course       | C1        |
+    And I backup "Course 1" course using this options:
+      | Confirmation | Filename | test_backup.mbz |
+    When I restore "test_backup.mbz" backup into a new course using this options:
+      | Settings | Include override permissions | 0 |
+    Then I navigate to "Users > Permissions" in current page administration
+    And I should see "Non-editing teacher (0)"

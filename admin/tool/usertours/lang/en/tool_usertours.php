@@ -44,6 +44,8 @@ $string['cssselector'] = 'CSS selector';
 $string['defaultvalue'] = 'Default ({$a})';
 $string['delay'] = 'Delay before showing the step';
 $string['done'] = 'Done';
+$string['duplicatetour'] = 'Duplicate tour';
+$string['duplicatetour_name'] = '{$a} (copy)';
 $string['editstep'] = 'Editing "{$a}"';
 $string['tourisenabled'] = 'Tour is enabled';
 $string['enabled'] = 'Enabled';
@@ -52,14 +54,22 @@ $string['event_tour_reset'] = 'Tour reset';
 $string['event_tour_ended'] = 'Tour ended';
 $string['event_step_shown'] = 'Step shown';
 $string['exporttour'] = 'Export tour';
+$string['filter_accessdate'] = 'Access date';
+$string['filter_accessdate_enabled'] = 'Enable access date filter';
+$string['filter_accessdate_enabled_help'] = 'Only show the tour to new users or users who have accessed the site recently.';
 $string['filter_category'] = 'Category';
 $string['filter_category_help'] = 'Show the tour on a page that is associated with a course in the selected category.';
 $string['filter_course'] = 'Courses';
 $string['filter_course_help'] = 'Show the tour on a page that is associated with the selected course.';
 $string['filter_courseformat'] = 'Course format';
 $string['filter_courseformat_help'] = 'Show the tour on a page that is associated with a course using the selected course format.';
+$string['filter_cssselector'] = 'CSS selector';
+$string['filter_cssselector_help'] = 'Only show the tour when the specified CSS selector is found on the page.';
 $string['filter_header'] = 'Tour filters';
 $string['filter_help'] = 'Select the conditions under which the tour will be shown. All of the filters must match for a tour to be shown to a user.';
+$string['filter_date_account_creation'] = 'User account creation date within';
+$string['filter_date_first_login'] = 'User\'s first access date within';
+$string['filter_date_last_login'] = 'User\'s last access date within';
 $string['filter_theme'] = 'Theme';
 $string['filter_theme_help'] = 'Show the tour when the user is using one of the selected themes.';
 $string['filter_role'] = 'Role';
@@ -179,3 +189,50 @@ $string['privacy:metadata:preference:requested'] = 'The time that a user last ma
 $string['privacy:metadata:preference:completed'] = 'The time that a user last completed a user tour.';
 $string['privacy:request:preference:requested'] = 'You last requested the "{$a->name}" user tour on {$a->time}';
 $string['privacy:request:preference:completed'] = 'You last marked the "{$a->name}" user tour as completed on {$a->time}';
+
+// 3.6 Dashboard tour.
+$string['tour3_title_dashboard'] = 'Your Dashboard';
+$string['tour3_content_dashboard'] = 'Your new Dashboard has many features to help you easily access the information most important to you.';
+$string['tour3_title_timeline'] = 'Timeline block';
+$string['tour3_content_timeline'] = 'The Timeline block shows your important upcoming events.
+
+You can choose to show activities in the next week, month, or further into the future.
+
+You can also show items which are overdue.';
+$string['tour3_title_recentcourses'] = 'Recently accessed courses';
+$string['tour3_content_recentcourses'] = 'The Recently accessed courses block shows the courses that you last visited, allowing you to jump straight back in.';
+$string['tour3_title_overview'] = 'Course overview';
+$string['tour3_content_overview'] = 'The Course overview block shows all of the courses that you are enrolled in.
+
+You can choose to show courses currently in progress, or in the past or the future, or courses which you have starred.';
+$string['tour3_title_starring'] = 'Starring and hiding courses';
+$string['tour3_content_starring'] = 'You can choose to star a course to make it stand out, or hide a course which is no longer important to you.
+
+These actions only affect your view.
+
+You can also choose to display the courses in a list, or with summary information, or the default \'card\' view.';
+$string['tour3_title_displayoptions'] = 'Display options';
+$string['tour3_content_displayoptions'] = 'Courses may be sorted by course name, course short name or last access date.
+
+You can also choose to display the courses in a list, with summary information, or the default \'card\' view.';
+
+// 3.6 Messaging tour.
+$string['tour4_title_messaging'] = 'New messaging interface';
+$string['tour4_content_messaging'] = 'New messaging features include group messaging within a course and better control over who can message you.';
+$string['tour4_title_icon'] = 'Messaging';
+$string['tour4_content_icon'] = 'You can access your messages from any page using this icon.
+
+If you have any unread messages, the number of unread messages will show here too.
+
+Click on the icon to open the messaging drawer and continue the tour.';
+$string['tour4_title_groupconvo'] = 'Group messages';
+$string['tour4_content_groupconvo'] = 'If you are a member of a group with group messaging enabled, you\'ll see group conversations here.
+
+Course group conversations allow you to interact with the others in your group in a private and convenient location.';
+$string['tour4_title_starred'] = 'Starred';
+$string['tour4_content_starred'] = 'You can choose to star particular conversations to make them easier to find.';
+$string['tour4_title_settings'] = 'Messaging settings';
+$string['tour4_content_settings'] = 'You can access your messaging settings via the cog icon. A new privacy setting allows you to restrict who can message you.';
+
+$string['tour_final_step_title'] = 'End of tour';
+$string['tour_final_step_content'] = 'This is the end of your user tour. It won\'t show again unless you reset it using the link in the footer.';
